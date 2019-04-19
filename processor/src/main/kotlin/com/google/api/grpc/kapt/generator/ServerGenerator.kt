@@ -210,7 +210,7 @@ internal class ServerGenerator(
                     )
                     .build()
             )
-            .addImport("kotlinx.coroutines", "launch")
+            .addImport("kotlinx.coroutines", "launch", "runBlocking")
             .addImport("kotlinx.coroutines", "coroutineScope")
             .build()
     }
@@ -249,7 +249,7 @@ internal class ServerGenerator(
                         |    val requestChannel: %T = Channel()
                         |    val requestObserver = object : %T {
                         |        override fun onNext(value: %T) {
-                        |            coroutineScope.launch { requestChannel.send(value) }
+                        |            runBlocking { requestChannel.send(value) }
                         |        }
                         |
                         |        override fun onError(t: Throwable) {
@@ -282,7 +282,7 @@ internal class ServerGenerator(
                         |    val requestChannel: %T = Channel()
                         |    val requestObserver = object : %T {
                         |        override fun onNext(value: %T) {
-                        |            coroutineScope.launch { requestChannel.send(value) }
+                        |            runBlocking { requestChannel.send(value) }
                         |        }
                         |
                         |        override fun onError(t: Throwable) {

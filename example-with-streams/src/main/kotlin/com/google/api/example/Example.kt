@@ -26,8 +26,7 @@ import io.grpc.MethodDescriptor
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.produce
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayInputStream
 import java.io.InputStream
@@ -50,32 +49,30 @@ fun main() = runBlocking {
             .asComplexServiceClient().use {
                 // unary call
                 println(it.ask(Question("what's this?")))
+                println()
 
                 // server streaming
                 for (answer in it.lecture(Question("my favorite topic"))) {
                     println(answer)
                 }
+                println()
 
                 // client streaming
                 println(it.listen(produce {
                     repeat(10) { i ->
-                        delay(100)
-                        send(Question("I" + " still".repeat(i) + " have a question"))
+                        send(Question("I" + " still".repeat(i) + " have a question [#${i + 1}]"))
                     }
                 }))
-
-                delay(2000)
+                println()
 
                 // bidirectional streaming
                 val answers = it.debate(produce {
-                    repeat(10) { i -> send(Question("Question ${i + 1}")) }
+                    repeat(10) { i -> send(Question("[#${i + 1}]")) }
                 })
                 for (answer in answers) {
                     println(answer)
                 }
-
-                delay(2000)
-                println("end")
+                println()
             }
         println("foo")
     }
@@ -105,18 +102,15 @@ class ComplexServiceServer : ComplexService {
     override suspend fun lecture(topic: Question) = GlobalScope.produce {
         send(Answer("let's talk about '${topic.query}'"))
         repeat(10) { i ->
-            delay(100)
-            send(Answer(Array(i + 1) { "more" }.joinToString(" and ")))
+            send(Answer(Array(i + 1) { "more" }.joinToString(" and ") + "[${i + 1}]"))
         }
     }
 
-    override suspend fun listen(questions: ReceiveChannel<Question>): Answer {
-        GlobalScope.launch {
-            for (question in questions) {
-                println("You asked: '${question.query}'")
-            }
+    override suspend fun listen(questions: ReceiveChannel<Question>): Answer = coroutineScope {
+        for (question in questions) {
+            println("You asked: '${question.query}'")
         }
-        return Answer("Questions anyone?")
+        Answer("Great questions everyone!")
     }
 
     override suspend fun debate(questions: ReceiveChannel<Question>): ReceiveChannel<Answer> = GlobalScope.produce {
