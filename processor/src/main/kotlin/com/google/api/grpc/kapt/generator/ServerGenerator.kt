@@ -43,6 +43,7 @@ import io.grpc.stub.ServerCalls
 import io.grpc.stub.StreamObserver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.channels.Channel
 import kotlinx.metadata.jvm.KotlinClassMetadata
 import javax.annotation.processing.ProcessingEnvironment
 import javax.lang.model.element.Element
@@ -93,21 +94,28 @@ internal class ServerGenerator(
             .addFunction(
                 FunSpec.builder("asGrpcService")
                     .addParameter(
-                        ParameterSpec.builder("scope", CoroutineScope::class)
+                        ParameterSpec.builder("coroutineScope", CoroutineScope::class)
                             .defaultValue("%T", GlobalScope::class)
                             .build()
                     )
                     .receiver(interfaceType)
                     .returns(BindableService::class)
-                    .addStatement("return %T(this, scope)", typeName)
-                    .addKdoc("Create a new service that can be bound to a gRPC server.")
+                    .addStatement("return %T(this, coroutineScope)", typeName)
+                    .addKdoc(
+                        """
+                        |Create a new service that can be bound to a gRPC server.
+                        |
+                        |Server methods are launched in the [coroutineScope], which is the [%T] by default.
+                        """.trimMargin(),
+                        GlobalScope::class.asTypeName()
+                    )
                     .build()
             )
             .addFunction(
                 FunSpec.builder("asGrpcServer")
                     .addParameter("port", Int::class)
                     .addParameter(
-                        ParameterSpec.builder("scope", CoroutineScope::class)
+                        ParameterSpec.builder("coroutineScope", CoroutineScope::class)
                             .defaultValue("%T", GlobalScope::class)
                             .build()
                     )
@@ -116,12 +124,20 @@ internal class ServerGenerator(
                     .addStatement(
                         """
                     |return %T.forPort(port)
-                    |    .addService(this.asGrpcService(scope))
+                    |    .addService(this.asGrpcService(coroutineScope))
                     |    .build()
                     """.trimMargin(),
                         ServerBuilder::class
                     )
-                    .addKdoc("Create a new gRPC server on the given [port] running the [%T] service.", interfaceType)
+                    .addKdoc(
+                        """
+                        |Create a new gRPC server on the given [port] running the [%T] service.
+                        |
+                        |Server methods are launched in the [coroutineScope], which is the [%T] by default.
+                        """.trimMargin(),
+                        interfaceType,
+                        GlobalScope::class.asTypeName()
+                    )
                     .build()
             )
             .addFunction(
@@ -226,6 +242,39 @@ internal class ServerGenerator(
                         StreamObserver::class.asClassName().parameterizedBy(methodInfo.rpc.outputType),
                         methodInfo.name
                     )
+                } else if (methodInfo.rpc.type == MethodDescriptor.MethodType.CLIENT_STREAMING) {
+                    add(
+                        """
+                        |%T.asyncClientStreamingCall { responseObserver: %T ->
+                        |    val requestChannel: %T = Channel()
+                        |    val requestObserver = object : %T {
+                        |        override fun onNext(value: %T) {
+                        |            coroutineScope.launch { requestChannel.send(value) }
+                        |        }
+                        |
+                        |        override fun onError(t: Throwable) {
+                        |            requestChannel.close(t)
+                        |        }
+                        |
+                        |        override fun onCompleted() {
+                        |            requestChannel.close()
+                        |        }
+                        |    }
+                        |
+                        |    coroutineScope.launch {
+                        |        responseObserver.onNext(implementation.%L(requestChannel))
+                        |    }
+                        |
+                        |    requestObserver
+                        |}
+                        """.trimMargin(),
+                        ServerCalls::class.asClassName(),
+                        StreamObserver::class.asClassName().parameterizedBy(methodInfo.rpc.outputType),
+                        Channel::class.asClassName().parameterizedBy(methodInfo.rpc.inputType),
+                        StreamObserver::class.asClassName().parameterizedBy(methodInfo.rpc.inputType),
+                        methodInfo.rpc.inputType,
+                        methodInfo.name
+                    )
                 } else { // MethodDescriptor.MethodType.UNARY
                     add(
                         """
@@ -240,9 +289,9 @@ internal class ServerGenerator(
                         |    }
                         |}
                         """.trimMargin(),
-                            ServerCalls::class.asClassName(), methodInfo.rpc.inputType,
-                            StreamObserver::class.asClassName().parameterizedBy(methodInfo.rpc.outputType),
-                            methodInfo.name
+                        ServerCalls::class.asClassName(), methodInfo.rpc.inputType,
+                        StreamObserver::class.asClassName().parameterizedBy(methodInfo.rpc.outputType),
+                        methodInfo.name
                     )
                 }
                 unindent()

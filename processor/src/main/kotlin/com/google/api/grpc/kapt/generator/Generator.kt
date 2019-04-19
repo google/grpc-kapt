@@ -22,12 +22,9 @@ import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.FileSpec
 import com.squareup.kotlinpoet.ParameterizedTypeName
 import com.squareup.kotlinpoet.TypeName
-import com.squareup.kotlinpoet.asClassName
 import com.squareup.kotlinpoet.asTypeName
-import com.squareup.kotlinpoet.jvm.jvmWildcard
 import io.grpc.MethodDescriptor
 import kotlinx.coroutines.channels.ReceiveChannel
-import kotlinx.coroutines.channels.SendChannel
 import kotlinx.metadata.Flag
 import kotlinx.metadata.Flags
 import kotlinx.metadata.KmClassVisitor
@@ -145,27 +142,31 @@ internal fun KotlinClassMetadata.Class.describeElement(
 
             isSuspend = Flag.Function.IS_SUSPEND(flags)
             return object : KmFunctionVisitor() {
-                private val returnVisitor = TypeArgVisitor()
+                private val returnTypeVisitor = TypeArgVisitor()
 
                 override fun visitValueParameter(flags: Flags, name: String): KmValueParameterVisitor? {
                     val paramName = name
+                    val paramTypeVisitor = TypeArgVisitor()
+
                     return object : KmValueParameterVisitor() {
-                        override fun visitType(flags: Flags): KmTypeVisitor? {
-                            return object: KmTypeVisitor() {
-                                override fun visitClass(name: kotlinx.metadata.ClassName) {
-                                    parameters.add(ParameterInfo(paramName, name.asClassName()))
-                                }
-                            }
+                        override fun visitType(flags: Flags): KmTypeVisitor {
+                            return paramTypeVisitor
+                        }
+
+                        override fun visitEnd() {
+                            val type = paramTypeVisitor.type ?:
+                                throw CodeGenerationException("Unable to determine param type of '$paramName' in method: '$funName'.")
+                            parameters.add(ParameterInfo(paramName, type))
                         }
                     }
                 }
 
                 override fun visitReturnType(flags: Flags): KmTypeVisitor? {
-                    return returnVisitor
+                    return returnTypeVisitor
                 }
 
                 override fun visitEnd() {
-                    returns = returnVisitor.type ?:
+                    returns = returnTypeVisitor.type ?:
                         throw CodeGenerationException("Unable to determine return type of method: '$funName'.")
                 }
             }
@@ -180,9 +181,9 @@ internal fun KotlinClassMetadata.Class.describeElement(
     // determine rpc type from method signature
     val inputType = parameters.first().type
     val methodType = when {
-        returns.isReceiveChannel() && inputType.isSendChannel() -> MethodDescriptor.MethodType.BIDI_STREAMING
+        returns.isReceiveChannel() && inputType.isReceiveChannel() -> MethodDescriptor.MethodType.BIDI_STREAMING
         returns.isReceiveChannel() -> MethodDescriptor.MethodType.SERVER_STREAMING
-        inputType.isSendChannel() -> MethodDescriptor.MethodType.CLIENT_STREAMING
+        inputType.isReceiveChannel() -> MethodDescriptor.MethodType.CLIENT_STREAMING
         else -> MethodDescriptor.MethodType.UNARY
     }
 
@@ -237,7 +238,6 @@ private class TypeArgVisitor: KmTypeVisitor() {
     }
 }
 
-internal fun TypeName.isSendChannel() = this.isRawType(SendChannel::class.asTypeName())
 internal fun TypeName.isReceiveChannel() = this.isRawType(ReceiveChannel::class.asTypeName())
 
 internal fun TypeName.isRawType(type: TypeName): Boolean {

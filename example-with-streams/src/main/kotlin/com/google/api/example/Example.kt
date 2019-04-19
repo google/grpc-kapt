@@ -21,35 +21,16 @@ import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.google.api.grpc.kapt.GrpcClient
 import com.google.api.grpc.kapt.GrpcServer
 import com.google.api.grpc.kapt.MarshallerProvider
-import io.grpc.BindableService
-import io.grpc.CallOptions
-import io.grpc.ManagedChannel
 import io.grpc.ManagedChannelBuilder
 import io.grpc.MethodDescriptor
-import io.grpc.Server
-import io.grpc.ServerBuilder
-import io.grpc.ServerCallHandler
-import io.grpc.ServerServiceDefinition
-import io.grpc.ServiceDescriptor
-import io.grpc.stub.ClientCalls
-import io.grpc.stub.ServerCalls
-import io.grpc.stub.StreamObserver
-import kotlinx.coroutines.CancellableContinuation
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.produce
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.guava.await
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.ByteArrayInputStream
 import java.io.InputStream
-import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 private const val PORT = 8080
 
@@ -71,18 +52,27 @@ fun main() = runBlocking {
                 println(it.ask(Question("what's this?")))
 
                 // server streaming
-                for (answer in it.listen(Question("talk about this"))) {
+                for (answer in it.lecture(Question("my favorite topic"))) {
                     println(answer)
                 }
 
-                println("FOO")
-                // client streaming
-                // TODO
+                // server streaming
+                val response = it.listen(produce {
+                    repeat(10) { i ->
+                        delay(100)
+                        send(Question("I" + " still".repeat(i) + " have a question"))
+                    }
+                })
+                println(response)
 
+                delay(2000)
+                println("end")
                 // bidirectional streaming
                 // TODO
             }
+        println("foo")
     }
+    println("bar")
 }
 
 // define the data types
@@ -94,19 +84,32 @@ data class Answer(val result: String)
 @GrpcClient("Ask", marshaller = MyMarshallerProvider::class)
 interface ComplexService {
     suspend fun ask(question: Question): Answer
-    suspend fun listen(topic: Question): ReceiveChannel<Answer>
-    //suspend fun lecture(answers: SendChannel<Question>): Answer
+    suspend fun lecture(topic: Question): ReceiveChannel<Answer>
+    suspend fun listen(questions: ReceiveChannel<Question>): Answer
     //suspend fun debate(questions: SendChannel<Question>): ReceiveChannel<Answer>
 }
 
 // generate a gRPC service
 @GrpcServer("Ask", marshaller = MyMarshallerProvider::class)
-//@ExperimentalCoroutinesApi
 class ComplexServiceServer : ComplexService {
 
     override suspend fun ask(question: Question) = Answer(result = "you said: '${question.query}'")
-    override suspend fun listen(topic: Question) = GlobalScope.produce {
-        "let's think about: '${topic.query}'".split(" ").forEach { send(Answer(it)) }
+
+    override suspend fun lecture(topic: Question) = GlobalScope.produce {
+        send(Answer("let's talk about '${topic.query}'"))
+        repeat(10) { i ->
+            delay(100)
+            send(Answer(Array(i + 1) { "more" }.joinToString(" and ")))
+        }
+    }
+
+    override suspend fun listen(questions: ReceiveChannel<Question>): Answer {
+        GlobalScope.launch {
+            for (question in questions) {
+                println("You asked: '${question.query}'")
+            }
+        }
+        return Answer("Questions anyone?")
     }
 }
 

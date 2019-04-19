@@ -36,6 +36,7 @@ import io.grpc.MethodDescriptor
 import io.grpc.stub.ClientCalls
 import io.grpc.stub.StreamObserver
 import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.channels.Channel
@@ -238,7 +239,7 @@ internal class ClientGenerator(
                     |val %L: %T = Channel()
                     |this.coroutineScope.launch {
                     |    suspendCancellableCoroutine { cont: %T ->
-                    |        %T.asyncServerStreamingCall(call, topic, object : %T {
+                    |        %T.asyncServerStreamingCall(call, %L, object : %T {
                     |            override fun onNext(value: %T) {
                     |                launch { %L.send(value) }
                     |            }
@@ -258,13 +259,53 @@ internal class ClientGenerator(
                     channelVar,
                     Channel::class.asClassName().parameterizedBy(methodInfo.rpc.outputType),
                     CancellableContinuation::class.asClassName().parameterizedBy(Unit::class.asTypeName()),
-                    ClientCalls::class.asTypeName(),
+                    ClientCalls::class.asTypeName(), requestVar,
                     StreamObserver::class.asClassName().parameterizedBy(methodInfo.rpc.outputType),
                     methodInfo.rpc.outputType,
                     channelVar,
                     channelVar,
                     channelVar,
                     channelVar
+                )
+            } else if (methodInfo.rpc.type == MethodDescriptor.MethodType.CLIENT_STREAMING) {
+                val dataVar = "data".unless(callVar, requestVar)
+                val requestStreamVar = "requestStream".unless(callVar, requestVar, dataVar)
+                builder.addCode(
+                    """
+                    |return suspendCancellableCoroutine { cont: %T ->
+                    |    val %L = %T.asyncClientStreamingCall(call, object : %T {
+                    |        override fun onNext(value: %T) {
+                    |            cont.resume(value)
+                    |        }
+                    |        override fun onError(t: Throwable) {
+                    |            cont.resumeWithException(t)
+                    |        }
+                    |        override fun onCompleted() {}
+                    |    })
+                    |    this.coroutineScope.launch {
+                    |        try {
+                    |            for (request in %L) {
+                    |                %L.onNext(request)
+                    |            }
+                    |            %L.onCompleted()
+                    |        } catch (_ : %T) {
+                    |            %L.onCompleted()
+                    |        } catch (t: Throwable) {
+                    |            %L.onError(t)
+                    |        }
+                    |    }
+                    |}
+                    |""".trimMargin(),
+                    CancellableContinuation::class.asClassName().parameterizedBy(methodInfo.rpc.outputType),
+                    requestStreamVar, ClientCalls::class.asTypeName(),
+                    StreamObserver::class.asClassName().parameterizedBy(methodInfo.rpc.outputType),
+                    methodInfo.rpc.outputType,
+                    requestVar,
+                    requestStreamVar,
+                    requestStreamVar,
+                    CancellationException::class.asClassName(),
+                    requestStreamVar,
+                    requestStreamVar
                 )
             } else { // MethodDescriptor.MethodType.UNARY
                 builder.addStatement(
