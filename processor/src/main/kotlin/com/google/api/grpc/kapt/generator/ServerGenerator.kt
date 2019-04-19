@@ -275,6 +275,46 @@ internal class ServerGenerator(
                         methodInfo.rpc.inputType,
                         methodInfo.name
                     )
+                } else if (methodInfo.rpc.type == MethodDescriptor.MethodType.BIDI_STREAMING) {
+                    add(
+                        """
+                        |%T.asyncBidiStreamingCall { responseObserver: %T ->
+                        |    val requestChannel: %T = Channel()
+                        |    val requestObserver = object : %T {
+                        |        override fun onNext(value: %T) {
+                        |            coroutineScope.launch { requestChannel.send(value) }
+                        |        }
+                        |
+                        |        override fun onError(t: Throwable) {
+                        |            requestChannel.close(t)
+                        |        }
+                        |
+                        |        override fun onCompleted() {
+                        |            requestChannel.close()
+                        |        }
+                        |    }
+                        |
+                        |    coroutineScope.launch {
+                        |        try {
+                        |            for (data in implementation.%L(requestChannel)) {
+                        |                responseObserver.onNext(data)
+                        |            }
+                        |            responseObserver.onCompleted()
+                        |        } catch(t: Throwable) {
+                        |            responseObserver.onError(t)
+                        |        }
+                        |    }
+                        |
+                        |    requestObserver
+                        |}
+                        """.trimMargin(),
+                        ServerCalls::class.asClassName(),
+                        StreamObserver::class.asClassName().parameterizedBy(methodInfo.rpc.outputType),
+                        Channel::class.asClassName().parameterizedBy(methodInfo.rpc.inputType),
+                        StreamObserver::class.asClassName().parameterizedBy(methodInfo.rpc.inputType),
+                        methodInfo.rpc.inputType,
+                        methodInfo.name
+                    )
                 } else { // MethodDescriptor.MethodType.UNARY
                     add(
                         """

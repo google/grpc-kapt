@@ -307,6 +307,63 @@ internal class ClientGenerator(
                     requestStreamVar,
                     requestStreamVar
                 )
+            } else if (methodInfo.rpc.type == MethodDescriptor.MethodType.BIDI_STREAMING) {
+                val dataVar = "data".unless(callVar, requestVar)
+                val channelVar = "channel".unless(callVar, requestVar, dataVar)
+                val requestStreamVar = "requestStream".unless(callVar, requestVar, dataVar, channelVar)
+                builder.addCode(
+                    """
+                    |val %L: %T = Channel()
+                    |this.coroutineScope.launch {
+                    |    suspendCancellableCoroutine { cont: %T ->
+                    |        val %L = %T.asyncBidiStreamingCall(call, object : %T {
+                    |            override fun onNext(value: %T) {
+                    |                launch { %L.send(value) }
+                    |            }
+                    |            override fun onError(t: Throwable) {
+                    |                %L.close(t)
+                    |                cont.resumeWithException(t)
+                    |            }
+                    |            override fun onCompleted() {
+                    |                %L.close()
+                    |                cont.resume(Unit)
+                    |            }
+                    |        })
+                    |        coroutineScope.launch {
+                    |            try {
+                    |                for (request in %L) {
+                    |                    %L.onNext(request)
+                    |                }
+                    |                %L.onCompleted()
+                    |            } catch (_ : %T) {
+                    |                %L.onCompleted()
+                    |            } catch (t: Throwable) {
+                    |                %L.onError(t)
+                    |            }
+                    |        }
+                    |    }
+                    |}
+                    |return %L
+                    |""".trimMargin(),
+                    channelVar,
+                    Channel::class.asClassName().parameterizedBy(methodInfo.rpc.outputType),
+                    CancellableContinuation::class.asClassName().parameterizedBy(Unit::class.asTypeName()),
+                    requestStreamVar, ClientCalls::class.asTypeName(),
+                    StreamObserver::class.asClassName().parameterizedBy(methodInfo.rpc.outputType),
+                    methodInfo.rpc.outputType,
+                    channelVar,
+                    channelVar,
+                    channelVar,
+
+                    requestVar,
+                    requestStreamVar,
+                    requestStreamVar,
+                    CancellationException::class.asClassName(),
+                    requestStreamVar,
+                    requestStreamVar,
+
+                    channelVar
+                )
             } else { // MethodDescriptor.MethodType.UNARY
                 builder.addStatement(
                     "return %T.futureUnaryCall(%L, %L).await()",

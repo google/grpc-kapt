@@ -56,19 +56,26 @@ fun main() = runBlocking {
                     println(answer)
                 }
 
-                // server streaming
-                val response = it.listen(produce {
+                // client streaming
+                println(it.listen(produce {
                     repeat(10) { i ->
                         delay(100)
                         send(Question("I" + " still".repeat(i) + " have a question"))
                     }
+                }))
+
+                delay(2000)
+
+                // bidirectional streaming
+                val answers = it.debate(produce {
+                    repeat(10) { i -> send(Question("Question ${i + 1}")) }
                 })
-                println(response)
+                for (answer in answers) {
+                    println(answer)
+                }
 
                 delay(2000)
                 println("end")
-                // bidirectional streaming
-                // TODO
             }
         println("foo")
     }
@@ -86,7 +93,7 @@ interface ComplexService {
     suspend fun ask(question: Question): Answer
     suspend fun lecture(topic: Question): ReceiveChannel<Answer>
     suspend fun listen(questions: ReceiveChannel<Question>): Answer
-    //suspend fun debate(questions: SendChannel<Question>): ReceiveChannel<Answer>
+    suspend fun debate(questions: ReceiveChannel<Question>): ReceiveChannel<Answer>
 }
 
 // generate a gRPC service
@@ -110,6 +117,12 @@ class ComplexServiceServer : ComplexService {
             }
         }
         return Answer("Questions anyone?")
+    }
+
+    override suspend fun debate(questions: ReceiveChannel<Question>): ReceiveChannel<Answer> = GlobalScope.produce {
+        for (question in questions) {
+            send(Answer("${question.query}? Sorry, I don't know..."))
+        }
     }
 }
 
