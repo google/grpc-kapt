@@ -262,7 +262,11 @@ internal class ServerGenerator(
                         |    }
                         |
                         |    coroutineScope.launch {
-                        |        responseObserver.onNext(implementation.%L(requestChannel))
+                        |        try {
+                        |            responseObserver.onNext(implementation.%L(requestChannel))
+                        |        } finally {
+                        |            responseObserver.onCompleted()
+                        |        }
                         |    }
                         |
                         |    requestObserver

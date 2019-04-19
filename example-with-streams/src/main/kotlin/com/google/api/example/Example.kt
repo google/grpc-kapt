@@ -42,6 +42,8 @@ private const val PORT = 8080
 fun main() = runBlocking {
     // create the server
     val server = ComplexServiceServer().asGrpcServer(PORT) {
+        println("Server started on port: $PORT\n")
+
         // create a client with a new channel and call the server
         ManagedChannelBuilder
             .forAddress("localhost", PORT)
@@ -74,9 +76,8 @@ fun main() = runBlocking {
                 }
                 println()
             }
-        println("foo")
     }
-    println("bar")
+    println("Server terminated.")
 }
 
 // define the data types
