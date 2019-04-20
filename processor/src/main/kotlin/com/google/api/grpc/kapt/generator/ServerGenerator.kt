@@ -47,7 +47,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.metadata.jvm.KotlinClassMetadata
 import javax.annotation.processing.ProcessingEnvironment
 import javax.lang.model.element.Element
-import javax.lang.model.type.MirroredTypeException
 
 internal class ServerGenerator(
     override val environment: ProcessingEnvironment,
@@ -215,7 +214,7 @@ internal class ServerGenerator(
         metadata: KotlinClassMetadata.Class,
         marshallerType: TypeName
     ): PropertySpec {
-        val methodsInitalizers = this.mapRPCs(metadata) { methodInfo, rpc ->
+        val methodsInitalizers = this.mapRPCs(metadata) { methodInfo, _ ->
             val serverCall = with(CodeBlock.builder()) {
                 indent()
                 if (methodInfo.rpc.type == MethodDescriptor.MethodType.SERVER_STREAMING) {

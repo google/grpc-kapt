@@ -19,9 +19,7 @@ package com.google.api.grpc.kapt
 import com.google.api.grpc.kapt.generator.ClientGenerator
 import com.google.api.grpc.kapt.generator.Generator
 import com.google.api.grpc.kapt.generator.ServerGenerator
-import com.google.api.grpc.kapt.generator.asGeneratedInterfaceType
 import com.google.api.grpc.kapt.generator.error
-import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.asTypeName
 import java.io.File
 import javax.annotation.processing.AbstractProcessor
@@ -83,7 +81,6 @@ class GrpcProcessor : AbstractProcessor() {
         annotatedMarshallers.firstOrNull()?.apply {
             Generator.DEFAULT_MARSHALLER = this.asType().asTypeName()
         }
-
 
         // get output directory
         val outputPath = processingEnv.options[KAPT_KOTLIN_GENERATED_OPTION_NAME] ?: run {

@@ -21,7 +21,6 @@ import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.google.api.grpc.kapt.GrpcClient
 import com.google.api.grpc.kapt.GrpcMarshaller
 import com.google.api.grpc.kapt.GrpcServer
-import com.google.api.grpc.kapt.MarshallerProvider
 import io.grpc.ManagedChannelBuilder
 import io.grpc.MethodDescriptor
 import kotlinx.coroutines.GlobalScope
@@ -35,10 +34,12 @@ import java.io.InputStream
 private const val PORT = 8080
 
 /**
- * Run the server and call the [SimpleService.ask] method.
+ * Run a gRPC client & server defined by the [ComplexService] interface.
  *
  * This example is a more complex example that showcases gRPC
  * streaming methods and using a custom data marshaller.
+ *
+ * For a simple example, see the example directory in the root of this project.
  */
 fun main() = runBlocking {
     // create the server
@@ -122,7 +123,6 @@ class ComplexServiceServer : ComplexService {
     }
 }
 
-// example of using a data marshaller
 @GrpcMarshaller
 object MyMarshallerProvider {
     private val mapper: ObjectMapper = ObjectMapper().registerModule(KotlinModule())

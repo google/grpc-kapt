@@ -114,7 +114,7 @@ internal fun Element.asKotlinMetadata(): KotlinClassMetadata.Class {
 }
 
 /** Iterate through the methods on a class or interface [Element] and map them with the given [block]. */
-internal fun <T> Element.mapRPCs(metadata: KotlinClassMetadata.Class, block: (KotlinMethodInfo, RPCElement) -> T) =
+internal fun <T> Element.mapRPCs(metadata: KotlinClassMetadata.Class, block: (KotlinMethodInfo, String) -> T) =
     this.enclosedElements
         .filter { it.kind == ElementKind.METHOD }
         .mapNotNull { it as? ExecutableElement }
@@ -125,13 +125,7 @@ internal fun <T> Element.mapRPCs(metadata: KotlinClassMetadata.Class, block: (Ko
             // TODO: avoid doing this multiple times
             val methodInfo = metadata.describeElement(it, rpcName)
 
-            // extract common properties for processing
-            val context = RPCElement(
-                methodInfo = methodInfo,
-                descriptorPropertyName = methodInfo.rpc.name.decapitalize()
-            )
-
-            block(methodInfo, context)
+            block(methodInfo, methodInfo.rpc.name.decapitalize())
         }
 
 /** Info about a Kotlin function (including info extracted from the @Metadata annotation). */
@@ -288,12 +282,7 @@ private fun TypeName.extractStreamType(): TypeName {
 }
 
 // convert from a Kotlin ClassName to a KotlinPoet ClassName
-internal fun kotlinx.metadata.ClassName.asClassName() = ClassName.bestGuess(this.toString().replace("/", "."))
-
-internal data class RPCElement(
-    val methodInfo: KotlinMethodInfo,
-    val descriptorPropertyName: String
-)
+internal fun kotlinx.metadata.ClassName.asClassName() = ClassName.bestGuess(this.replace("/", "."))
 
 internal data class ParameterInfo(val name: String, val type: TypeName)
 

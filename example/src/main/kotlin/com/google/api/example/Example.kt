@@ -27,6 +27,8 @@ private const val PORT = 8080
  * Run the server and call the [SimpleService.ask] method.
  *
  * This example uses the default JSON marshaller to serialize the data types.
+ *
+ * For a more complex example, see the example-with-streams directory in the root of this project.
  */
 fun main() = runBlocking {
     // create the server

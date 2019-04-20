@@ -27,7 +27,6 @@ import com.squareup.kotlinpoet.PropertySpec
 import com.squareup.kotlinpoet.TypeName
 import com.squareup.kotlinpoet.TypeSpec
 import com.squareup.kotlinpoet.TypeVariableName
-import com.squareup.kotlinpoet.UNIT
 import com.squareup.kotlinpoet.asClassName
 import com.squareup.kotlinpoet.asTypeName
 import io.grpc.CallOptions
@@ -45,7 +44,6 @@ import kotlinx.metadata.jvm.KotlinClassMetadata
 import java.util.concurrent.TimeUnit
 import javax.annotation.processing.ProcessingEnvironment
 import javax.lang.model.element.Element
-import javax.lang.model.type.MirroredTypeException
 
 /**
  * Generates a gRPC client from an interface annotated with [GrpcClient].
@@ -207,7 +205,7 @@ internal class ClientGenerator(
     }
 
     private fun Element.extractRpcMethods(metadata: KotlinClassMetadata.Class) =
-        this.mapRPCs(metadata) { methodInfo, rpc ->
+        this.mapRPCs(metadata) { methodInfo, descriptorPropertyName ->
             val requestVar = methodInfo.parameters.first().name
             val requestType = methodInfo.parameters.first().type
             val callVar = "call".unless(requestVar)
@@ -224,7 +222,7 @@ internal class ClientGenerator(
                 .returns(methodInfo.returns)
                 .addStatement(
                     "val %L = channel.newCall(this.%L, this.callOptions)",
-                    callVar, rpc.descriptorPropertyName
+                    callVar, descriptorPropertyName
                 )
 
             // implement method based on rpc method type
@@ -376,11 +374,11 @@ internal class ClientGenerator(
         serviceName: String,
         marshallerType: TypeName
     ) =
-        this.mapRPCs(metadata) { methodInfo, rpc ->
+        this.mapRPCs(metadata) { methodInfo, descriptorPropertyName ->
             val type = MethodDescriptor::class.asClassName()
                 .parameterizedBy(methodInfo.rpc.inputType, methodInfo.rpc.outputType)
 
-            PropertySpec.builder(rpc.descriptorPropertyName, type)
+            PropertySpec.builder(descriptorPropertyName, type)
                 .addModifiers(KModifier.PRIVATE)
                 .delegate(
                     """
