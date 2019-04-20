@@ -19,6 +19,7 @@ package com.google.api.example
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.google.api.grpc.kapt.GrpcClient
+import com.google.api.grpc.kapt.GrpcMarshaller
 import com.google.api.grpc.kapt.GrpcServer
 import com.google.api.grpc.kapt.MarshallerProvider
 import io.grpc.ManagedChannelBuilder
@@ -86,7 +87,7 @@ data class Question(val query: String)
 data class Answer(val result: String)
 
 // generate a gRPC client
-@GrpcClient("Ask", marshaller = MyMarshallerProvider::class)
+@GrpcClient("Ask")
 interface ComplexService {
     suspend fun ask(question: Question): Answer
     suspend fun lecture(topic: Question): ReceiveChannel<Answer>
@@ -95,7 +96,7 @@ interface ComplexService {
 }
 
 // generate a gRPC service
-@GrpcServer("Ask", marshaller = MyMarshallerProvider::class)
+@GrpcServer("Ask")
 class ComplexServiceServer : ComplexService {
 
     override suspend fun ask(question: Question) = Answer(result = "you said: '${question.query}'")
@@ -122,10 +123,11 @@ class ComplexServiceServer : ComplexService {
 }
 
 // example of using a data marshaller
-object MyMarshallerProvider : MarshallerProvider {
+@GrpcMarshaller
+object MyMarshallerProvider {
     private val mapper: ObjectMapper = ObjectMapper().registerModule(KotlinModule())
 
-    override fun <T> of(type: Class<T>): MethodDescriptor.Marshaller<T> {
+    fun <T> of(type: Class<T>): MethodDescriptor.Marshaller<T> {
         return object : MethodDescriptor.Marshaller<T> {
             override fun stream(value: T): InputStream = ByteArrayInputStream(mapper.writeValueAsBytes(value))
             override fun parse(stream: InputStream): T = stream.bufferedReader().use { mapper.readValue(it, type) }

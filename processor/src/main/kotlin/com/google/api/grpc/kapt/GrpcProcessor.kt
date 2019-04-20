@@ -17,8 +17,12 @@
 package com.google.api.grpc.kapt
 
 import com.google.api.grpc.kapt.generator.ClientGenerator
+import com.google.api.grpc.kapt.generator.Generator
 import com.google.api.grpc.kapt.generator.ServerGenerator
+import com.google.api.grpc.kapt.generator.asGeneratedInterfaceType
 import com.google.api.grpc.kapt.generator.error
+import com.squareup.kotlinpoet.ClassName
+import com.squareup.kotlinpoet.asTypeName
 import java.io.File
 import javax.annotation.processing.AbstractProcessor
 import javax.annotation.processing.RoundEnvironment
@@ -39,7 +43,8 @@ private const val KAPT_KOTLIN_GENERATED_OPTION_NAME = "kapt.kotlin.generated"
 @SupportedAnnotationTypes(
     "com.google.api.grpc.kapt.GrpcClient",
     "com.google.api.grpc.kapt.GrpcServer",
-    "com.google.api.grpc.kapt.GrpcMethod"
+    "com.google.api.grpc.kapt.GrpcMethod",
+    "com.google.api.grpc.kapt.GrpcMarshaller"
 )
 class GrpcProcessor : AbstractProcessor() {
 
@@ -47,30 +52,38 @@ class GrpcProcessor : AbstractProcessor() {
     private val serverGenerator by lazy { ServerGenerator(processingEnv) }
 
     override fun process(annotations: MutableSet<out TypeElement>?, roundEnv: RoundEnvironment): Boolean {
+        val annotatedMarshallers = roundEnv.getElementsAnnotatedWith(GrpcMarshaller::class.java)
+        val annotatedClients = roundEnv.getElementsAnnotatedWith(GrpcClient::class.java)
+        val annotatedServers = roundEnv.getElementsAnnotatedWith(GrpcServer::class.java)
+
         // sanity checks
-        if (roundEnv.getElementsAnnotatedWith(GrpcClient::class.java)
-                .any { it.kind != ElementKind.INTERFACE }
-        ) {
+        if (annotatedClients.any { it.kind != ElementKind.INTERFACE }) {
             processingEnv.error("@GrpcClient can only be applied to interfaces.")
             return false
         }
-        if (roundEnv.getElementsAnnotatedWith(GrpcServer::class.java)
-                .any { it.kind != ElementKind.CLASS }
-        ) {
+        if (annotatedServers.any { it.kind != ElementKind.CLASS }) {
             processingEnv.error("@GrpcServer can only be applied to classes.")
+            return false
+        }
+        if (annotatedMarshallers.any { it.kind != ElementKind.CLASS }) {
+            processingEnv.error("@GrpcMarshaller can only be applied to classes/objects and.")
+            return false
+        }
+        if (annotatedMarshallers.size > 1) {
+            processingEnv.error("@GrpcMarshaller may be applied at most once (${annotatedMarshallers.size} found).")
             return false
         }
 
         // filter input
-        val clientElements = roundEnv
-            .getElementsAnnotatedWith(GrpcClient::class.java)
-            .filter { it.kind == ElementKind.INTERFACE }
-        val serverElements = roundEnv
-            .getElementsAnnotatedWith(GrpcServer::class.java)
-            .filter { it.kind == ElementKind.CLASS }
-        if (clientElements.isEmpty() && serverElements.isEmpty()) {
+        if (annotatedClients.isEmpty() && annotatedServers.isEmpty()) {
             return false
         }
+
+        // set the default marshaller
+        annotatedMarshallers.firstOrNull()?.apply {
+            Generator.DEFAULT_MARSHALLER = this.asType().asTypeName()
+        }
+
 
         // get output directory
         val outputPath = processingEnv.options[KAPT_KOTLIN_GENERATED_OPTION_NAME] ?: run {
@@ -80,11 +93,11 @@ class GrpcProcessor : AbstractProcessor() {
         val outputDirectory = File(outputPath).also { it.mkdirs() }
 
         // generate code
-        for (el in clientElements) {
+        for (el in annotatedClients) {
             val client = clientGenerator.generate(el)
             client.writeTo(outputDirectory)
         }
-        for (el in serverElements) {
+        for (el in annotatedServers) {
             val server = serverGenerator.generate(el)
             server.writeTo(outputDirectory)
         }

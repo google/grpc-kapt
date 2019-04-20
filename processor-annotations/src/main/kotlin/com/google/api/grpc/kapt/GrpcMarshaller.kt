@@ -16,12 +16,6 @@
 
 package com.google.api.grpc.kapt
 
-import kotlin.reflect.KClass
-
 @Retention(AnnotationRetention.SOURCE)
 @Target(AnnotationTarget.CLASS)
-annotation class GrpcServer(
-    val name: String,
-    val packageName: String = "",
-    val marshaller: KClass<*> = Unit::class
-)
+annotation class GrpcMarshaller

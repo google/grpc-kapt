@@ -84,11 +84,7 @@ internal class ServerGenerator(
         }
 
         // determine marshaller to use
-        val marshallerType = try {
-            annotation.marshaller.asTypeName()
-        } catch (e: MirroredTypeException) {
-            e.typeMirror.asTypeName()
-        }
+        val marshallerType = annotation.asMarshallerType()
 
         return FileSpec.builder(typeName.packageName, typeName.simpleName)
             .addFunction(

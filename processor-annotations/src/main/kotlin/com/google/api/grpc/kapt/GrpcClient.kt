@@ -23,5 +23,5 @@ import kotlin.reflect.KClass
 annotation class GrpcClient(
     val name: String,
     val packageName: String = "",
-    val marshaller: KClass<out MarshallerProvider> = FallbackMarshallerProvider::class
+    val marshaller: KClass<*> = Unit::class
 )

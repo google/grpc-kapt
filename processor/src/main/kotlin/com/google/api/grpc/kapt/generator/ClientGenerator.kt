@@ -27,6 +27,7 @@ import com.squareup.kotlinpoet.PropertySpec
 import com.squareup.kotlinpoet.TypeName
 import com.squareup.kotlinpoet.TypeSpec
 import com.squareup.kotlinpoet.TypeVariableName
+import com.squareup.kotlinpoet.UNIT
 import com.squareup.kotlinpoet.asClassName
 import com.squareup.kotlinpoet.asTypeName
 import io.grpc.CallOptions
@@ -84,11 +85,7 @@ internal class ClientGenerator(
         }
 
         // determine marshaller to use
-        val marshallerType = try {
-            annotation.marshaller.asTypeName()
-        } catch (e: MirroredTypeException) {
-            e.typeMirror.asTypeName()
-        }
+        val marshallerType = annotation.asMarshallerType()
 
         // generate the client
         return FileSpec.builder(typeName.packageName, typeName.simpleName)

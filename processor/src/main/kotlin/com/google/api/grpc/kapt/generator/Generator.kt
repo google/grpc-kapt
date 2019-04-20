@@ -16,11 +16,14 @@
 
 package com.google.api.grpc.kapt.generator
 
-import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
+import com.google.api.grpc.kapt.FallbackMarshallerProvider
+import com.google.api.grpc.kapt.GrpcClient
 import com.google.api.grpc.kapt.GrpcMethod
+import com.google.api.grpc.kapt.GrpcServer
 import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.FileSpec
 import com.squareup.kotlinpoet.ParameterizedTypeName
+import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import com.squareup.kotlinpoet.TypeName
 import com.squareup.kotlinpoet.asTypeName
 import io.grpc.MethodDescriptor
@@ -38,6 +41,7 @@ import javax.annotation.processing.ProcessingEnvironment
 import javax.lang.model.element.Element
 import javax.lang.model.element.ElementKind
 import javax.lang.model.element.ExecutableElement
+import javax.lang.model.type.MirroredTypeException
 import javax.tools.Diagnostic
 
 /** A generator component running in the annotation processor's [environment]. */
@@ -46,6 +50,10 @@ internal interface Generator {
 
     /** Generate the component for the given [element]. */
     fun generate(element: Element): FileSpec
+
+    companion object {
+        var DEFAULT_MARSHALLER: TypeName = FallbackMarshallerProvider::class.asTypeName()
+    }
 }
 
 /** Generic exception for [Generator] components to throw */
@@ -60,6 +68,24 @@ internal fun ProcessingEnvironment.warn(message: String) = this.messager.printMe
 internal fun Element.asGeneratedInterfaceName() = this.simpleName.toString()
 
 internal fun Element.asGeneratedInterfaceType() = this.asType().asTypeName()
+
+internal fun GrpcClient.asMarshallerType(): TypeName = try {
+    this.marshaller.asTypeName()
+} catch (e: MirroredTypeException) {
+    e.typeMirror.asTypeName()
+}.asMarshallerClass()
+
+internal fun GrpcServer.asMarshallerType(): TypeName = try {
+    this.marshaller.asTypeName()
+} catch (e: MirroredTypeException) {
+    e.typeMirror.asTypeName()
+}.asMarshallerClass()
+
+private fun TypeName.asMarshallerClass() = if (Unit::class.asTypeName() == this) {
+    Generator.DEFAULT_MARSHALLER
+} else {
+    this
+}
 
 /**
  * Extract the Kotlin compiler metadata from the [Element].
@@ -154,8 +180,8 @@ internal fun KotlinClassMetadata.Class.describeElement(
                         }
 
                         override fun visitEnd() {
-                            val type = paramTypeVisitor.type ?:
-                                throw CodeGenerationException("Unable to determine param type of '$paramName' in method: '$funName'.")
+                            val type = paramTypeVisitor.type
+                                ?: throw CodeGenerationException("Unable to determine param type of '$paramName' in method: '$funName'.")
                             parameters.add(ParameterInfo(paramName, type))
                         }
                     }
@@ -166,8 +192,8 @@ internal fun KotlinClassMetadata.Class.describeElement(
                 }
 
                 override fun visitEnd() {
-                    returns = returnTypeVisitor.type ?:
-                        throw CodeGenerationException("Unable to determine return type of method: '$funName'.")
+                    returns = returnTypeVisitor.type
+                        ?: throw CodeGenerationException("Unable to determine return type of method: '$funName'.")
                 }
             }
         }
@@ -210,7 +236,7 @@ internal fun KotlinClassMetadata.Class.describeElement(
 }
 
 // Helper for constructing a full type with arguments
-private class TypeArgVisitor: KmTypeVisitor() {
+private class TypeArgVisitor : KmTypeVisitor() {
     private var typeName: TypeName? = null
     private var className: ClassName? = null
     private val args = mutableListOf<TypeArgVisitor>()
@@ -229,7 +255,7 @@ private class TypeArgVisitor: KmTypeVisitor() {
     }
 
     override fun visitEnd() {
-        typeName = if(args.isNotEmpty()) {
+        typeName = if (args.isNotEmpty()) {
             val typeArgs = args.mapNotNull { it.className }
             className?.parameterizedBy(*typeArgs.toTypedArray())
         } else {

@@ -44,6 +44,6 @@ dependencies {
     testImplementation(kotlin("test-junit"))
     testImplementation("junit:junit:4.12")
 
-    implementation(project(":processor-annotations"))
+    compileOnly(project(":processor-annotations"))
     kapt(project(":processor"))
 }
