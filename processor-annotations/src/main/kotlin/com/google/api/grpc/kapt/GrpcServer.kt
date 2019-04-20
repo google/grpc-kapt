@@ -18,6 +18,41 @@ package com.google.api.grpc.kapt
 
 import kotlin.reflect.KClass
 
+/**
+ * Marks a gRPC service implementation.
+ *
+ * The fully qualified name of the service will be: [packageName].[name]
+ *
+ * A [marshaller] can be provided to override the default [GrpcMarshaller] and
+ * must be a singleton object that implements [MarshallerProvider].
+ *
+ * Example:
+ * ```
+ * @GrpcServer("Ask")
+ * class ComplexServiceServer : ComplexService {
+ *   // implement the interface...
+ * }
+ *
+ * @GrpcClient("Ask")
+ * interface ComplexService {
+ *     // a unary method (most common type)
+ *     suspend fun ask(question: Question): Answer
+ *
+ *     // server streaming
+ *     suspend fun lecture(topic: Question): ReceiveChannel<Answer>
+ *
+ *     // client streaming
+ *     suspend fun listen(questions: ReceiveChannel<Question>): Answer
+ *
+ *     // bidirectional streming
+ *     suspend fun debate(questions: ReceiveChannel<Question>): ReceiveChannel<Answer>
+ * }
+ *
+ * // Create a server
+ * val server = ComplexServiceServer().asGrpcServer(8080)
+ * server.start()
+ * ```
+*/
 @Retention(AnnotationRetention.SOURCE)
 @Target(AnnotationTarget.CLASS)
 annotation class GrpcServer(

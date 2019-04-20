@@ -16,6 +16,12 @@
 
 package com.google.api.grpc.kapt
 
+/**
+ * Used to set the default [MarshallerProvider] for clients and servers.
+ *
+ * The class annotated should be a singleton object implements the provider interface. See the
+ * [FallbackMarshallerProvider] for an example of a simple JSON-based marshaller.
+ */
 @Retention(AnnotationRetention.SOURCE)
 @Target(AnnotationTarget.CLASS)
 annotation class GrpcMarshaller

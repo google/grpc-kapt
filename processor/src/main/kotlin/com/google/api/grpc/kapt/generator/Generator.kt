@@ -56,7 +56,7 @@ internal interface Generator {
     }
 }
 
-/** Generic exception for [Generator] components to throw */
+/** Generic exception for [Generator] components to throw. */
 internal class CodeGenerationException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
 
 // logging helpers
@@ -64,17 +64,20 @@ internal fun ProcessingEnvironment.error(message: String) = this.messager.printM
 
 internal fun ProcessingEnvironment.warn(message: String) = this.messager.printMessage(Diagnostic.Kind.WARNING, message)
 
-// naming helpers
+/** Class name used for the gRPC generated type (client & server). */
 internal fun Element.asGeneratedInterfaceName() = this.simpleName.toString()
 
+/** Class type used for the gRPC generated type (client & server). */
 internal fun Element.asGeneratedInterfaceType() = this.asType().asTypeName()
 
+/** Parse the marshaller provider from the annotation class. */
 internal fun GrpcClient.asMarshallerType(): TypeName = try {
     this.marshaller.asTypeName()
 } catch (e: MirroredTypeException) {
     e.typeMirror.asTypeName()
 }.asMarshallerClass()
 
+/** Parse the marshaller provider from the annotation class. */
 internal fun GrpcServer.asMarshallerType(): TypeName = try {
     this.marshaller.asTypeName()
 } catch (e: MirroredTypeException) {
@@ -137,7 +140,7 @@ internal data class KotlinMethodInfo(
     val rpc: RpcInfo
 )
 
-/** Info about the RPC associated with a method */
+/** Info about the RPC associated with a method. */
 internal data class RpcInfo(
     val name: String,
     val type: MethodDescriptor.MethodType,
@@ -145,7 +148,7 @@ internal data class RpcInfo(
     val outputType: TypeName
 )
 
-/** Parse information about a Kotlin function from the @Metadata annotation. */
+/** Parse information about a Kotlin function from the [kotlin.Metadata] annotation. */
 internal fun KotlinClassMetadata.Class.describeElement(
     method: ExecutableElement,
     rpcName: String?
@@ -258,8 +261,10 @@ private class TypeArgVisitor : KmTypeVisitor() {
     }
 }
 
+/** Test if the type is a [ReceiveChannel]. */
 internal fun TypeName.isReceiveChannel() = this.isRawType(ReceiveChannel::class.asTypeName())
 
+/** Test if the given [type] matches this type. */
 internal fun TypeName.isRawType(type: TypeName): Boolean {
     val rawType = if (this is ParameterizedTypeName) {
         this.rawType
@@ -281,9 +286,10 @@ private fun TypeName.extractStreamType(): TypeName {
     return t.typeArguments.first()
 }
 
-// convert from a Kotlin ClassName to a KotlinPoet ClassName
+/** Convert from a Kotlin [kotlinx.metadata.ClassName] to a KotlinPoet [ClassName]. */
 internal fun kotlinx.metadata.ClassName.asClassName() = ClassName.bestGuess(this.replace("/", "."))
 
+/** Describes a name type parameter in a function. */
 internal data class ParameterInfo(val name: String, val type: TypeName)
 
 /** Ensures the string does not equal any of the [others]. */

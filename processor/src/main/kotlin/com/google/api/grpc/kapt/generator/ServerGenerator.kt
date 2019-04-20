@@ -48,6 +48,9 @@ import kotlinx.metadata.jvm.KotlinClassMetadata
 import javax.annotation.processing.ProcessingEnvironment
 import javax.lang.model.element.Element
 
+/**
+ * Generates a gRPC [io.grpc.BindableService] from an interface annotated with [GrpcServer].
+ */
 internal class ServerGenerator(
     override val environment: ProcessingEnvironment,
     private val suffix: String = "ServerImpl"
@@ -421,6 +424,8 @@ internal class ServerGenerator(
             )
             .build()
 }
+
+// various type aliases and help functions to simplify the generated code
 
 private val methodBindingTypeAlias = TypeAliasSpec.builder(
     "MethodBinding<ReqT, RespT>",

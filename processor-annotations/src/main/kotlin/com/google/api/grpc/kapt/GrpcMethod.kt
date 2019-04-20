@@ -16,6 +16,7 @@
 
 package com.google.api.grpc.kapt
 
+// TODO: not yet used...
 @Retention(AnnotationRetention.SOURCE)
 @Target(AnnotationTarget.FUNCTION)
 annotation class GrpcMethod(val methodName: String = "")
