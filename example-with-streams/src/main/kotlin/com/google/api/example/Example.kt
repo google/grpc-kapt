@@ -23,13 +23,13 @@ import com.google.api.grpc.kapt.GrpcMarshaller
 import com.google.api.grpc.kapt.GrpcServer
 import io.grpc.ManagedChannelBuilder
 import io.grpc.MethodDescriptor
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.produce
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayInputStream
 import java.io.InputStream
+import kotlin.coroutines.coroutineContext
 
 private const val PORT = 8080
 
@@ -102,25 +102,26 @@ class ComplexServiceServer : ComplexService {
 
     override suspend fun ask(question: Question) = Answer(result = "you said: '${question.query}'")
 
-    override suspend fun lecture(topic: Question) = GlobalScope.produce {
+    override suspend fun lecture(topic: Question) = CoroutineScope(coroutineContext).produce {
         send(Answer("let's talk about '${topic.query}'"))
         repeat(10) { i ->
             send(Answer(Array(i + 1) { "more" }.joinToString(" and ") + "[${i + 1}]"))
         }
     }
 
-    override suspend fun listen(questions: ReceiveChannel<Question>): Answer = coroutineScope {
+    override suspend fun listen(questions: ReceiveChannel<Question>): Answer {
         for (question in questions) {
             println("You asked: '${question.query}'")
         }
-        Answer("Great questions everyone!")
+        return Answer("Great questions everyone!")
     }
 
-    override suspend fun debate(questions: ReceiveChannel<Question>): ReceiveChannel<Answer> = GlobalScope.produce {
-        for (question in questions) {
-            send(Answer("${question.query}? Sorry, I don't know..."))
+    override suspend fun debate(questions: ReceiveChannel<Question>): ReceiveChannel<Answer> =
+        CoroutineScope(coroutineContext).produce {
+            for (question in questions) {
+                send(Answer("${question.query}? Sorry, I don't know..."))
+            }
         }
-    }
 }
 
 @GrpcMarshaller

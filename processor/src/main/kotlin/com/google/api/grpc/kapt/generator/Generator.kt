@@ -121,6 +121,7 @@ internal fun <T> Element.mapRPCs(metadata: KotlinClassMetadata.Class, block: (Ko
     this.enclosedElements
         .filter { it.kind == ElementKind.METHOD }
         .mapNotNull { it as? ExecutableElement }
+        .filter { it.parameters.size > 0 } // TODO: better filtering?
         .map {
             val rpcName = it.getAnnotation(GrpcMethod::class.java)?.methodName
 

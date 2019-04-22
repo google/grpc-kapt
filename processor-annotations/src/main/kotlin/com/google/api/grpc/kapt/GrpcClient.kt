@@ -30,8 +30,12 @@ import kotlin.reflect.KClass
  *
  * Example:
  * ```
+ * import com.google.api.grpc.kapt.GrpcClient
+ * import io.grpc.ManagedChannelBuilder
+ * import kotlinx.coroutines.channels.ReceiveChannel
+
  * @GrpcClient("Ask")
- * interface ComplexService {
+ * interface MyService {
  *     // a unary method (most common type)
  *     suspend fun ask(question: Question): Answer
  *
@@ -49,7 +53,7 @@ import kotlin.reflect.KClass
  * ManagedChannelBuilder
  *     .forAddress("localhost", 8080)
  *     .usePlaintext()
- *     .asComplexServiceClient().use { client ->
+ *     .asMyServiceClient().use { client ->
  *        // use the client to call the server
  * }
  * ```

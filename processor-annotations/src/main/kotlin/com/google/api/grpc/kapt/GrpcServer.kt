@@ -28,13 +28,16 @@ import kotlin.reflect.KClass
  *
  * Example:
  * ```
+ * import com.google.api.grpc.kapt.GrpcServer
+ * import kotlinx.coroutines.channels.ReceiveChannel
+ *
  * @GrpcServer("Ask")
- * class ComplexServiceServer : ComplexService {
+ * class MyServiceServer : MyService, CoroutineScope {
  *   // implement the interface...
  * }
  *
  * @GrpcClient("Ask")
- * interface ComplexService {
+ * interface MyService {
  *     // a unary method (most common type)
  *     suspend fun ask(question: Question): Answer
  *
@@ -49,7 +52,7 @@ import kotlin.reflect.KClass
  * }
  *
  * // Create a server
- * val server = ComplexServiceServer().asGrpcServer(8080)
+ * val server = MyServiceServer().asGrpcServer(8080)
  * server.start()
  * ```
 */

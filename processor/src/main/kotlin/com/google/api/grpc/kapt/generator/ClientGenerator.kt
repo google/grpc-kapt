@@ -199,7 +199,7 @@ internal class ClientGenerator(
                     .build()
             )
             .addImport("kotlin.coroutines", "resume", "resumeWithException")
-            .addImport("kotlinx.coroutines", "launch", "suspendCancellableCoroutine")
+            .addImport("kotlinx.coroutines", "launch", "runBlocking", "suspendCancellableCoroutine")
             .addImport("kotlinx.coroutines.guava", "await")
             .build()
     }
@@ -236,7 +236,7 @@ internal class ClientGenerator(
                     |    suspendCancellableCoroutine { cont: %T ->
                     |        %T.asyncServerStreamingCall(call, %L, object : %T {
                     |            override fun onNext(value: %T) {
-                    |                launch { %L.send(value) }
+                    |                runBlocking { %L.send(value) }
                     |            }
                     |            override fun onError(t: Throwable) {
                     |                %L.close(t)
@@ -313,7 +313,7 @@ internal class ClientGenerator(
                     |    suspendCancellableCoroutine { cont: %T ->
                     |        val %L = %T.asyncBidiStreamingCall(call, object : %T {
                     |            override fun onNext(value: %T) {
-                    |                launch { %L.send(value) }
+                    |                runBlocking { %L.send(value) }
                     |            }
                     |            override fun onError(t: Throwable) {
                     |                %L.close(t)
