@@ -18,13 +18,13 @@ package com.google.api.grpc.kapt.generator
 
 import com.google.api.grpc.kapt.FallbackMarshallerProvider
 import com.google.api.grpc.kapt.GrpcClient
-import com.google.api.grpc.kapt.GrpcMethod
 import com.google.api.grpc.kapt.GrpcServer
 import com.squareup.kotlinpoet.ClassName
-import com.squareup.kotlinpoet.FileSpec
+import com.squareup.kotlinpoet.FunSpec
 import com.squareup.kotlinpoet.ParameterizedTypeName
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import com.squareup.kotlinpoet.TypeName
+import com.squareup.kotlinpoet.TypeSpec
 import com.squareup.kotlinpoet.asTypeName
 import io.grpc.MethodDescriptor
 import kotlinx.coroutines.channels.ReceiveChannel
@@ -45,15 +45,25 @@ import javax.lang.model.type.MirroredTypeException
 import javax.tools.Diagnostic
 
 /** A generator component running in the annotation processor's [environment]. */
-internal interface Generator {
+internal interface Generator<T> {
     val environment: ProcessingEnvironment
 
     /** Generate the component for the given [element]. */
-    fun generate(element: Element): FileSpec
+    fun generate(element: Element): T
 
     companion object {
         var DEFAULT_MARSHALLER: TypeName = FallbackMarshallerProvider::class.asTypeName()
     }
+}
+
+/**
+ * Used for a client/server interface [type] that is auto-generated (instead of written by the user).
+ *
+ * The associated [methodInfo] contains whatever additional metadata the client/server generators requires
+ * that is not contained in the interface [type]. The map contains an entry for each function in the [type].
+ */
+internal data class GeneratedInterface(val type: TypeSpec, val methodInfo: Map<FunSpec, KotlinMethodInfo>) {
+    fun asMethods(): List<KotlinMethodInfo> = methodInfo.values.toList()
 }
 
 /** Generic exception for [Generator] components to throw. */
@@ -91,6 +101,64 @@ private fun TypeName.asMarshallerClass() = if (Unit::class.asTypeName() == this)
 }
 
 /**
+ * Type information about a generated gRPC client/server.
+ *
+ * The [simpleName] is the same as the [type] without any suffix.
+ * The [fullName] is used for the gRPC service name (unless overriden by the [RpcInfo.packageName].
+ */
+internal data class AnnotatedTypeInfo(val simpleName: String, val fullName: String, val type: ClassName)
+
+/** Extract the type info from the annotation, using values from the [element] as needed. */
+internal fun GrpcClient.extractTypeInfo(
+    element: Element,
+    environment: ProcessingEnvironment,
+    suffix: String
+): AnnotatedTypeInfo =
+    extractTypeInfo(element, name, packageName, environment, suffix)
+
+/** Extract the type info from the annotation, using values from the [element] as needed. */
+internal fun GrpcServer.extractTypeInfo(
+    element: Element,
+    environment: ProcessingEnvironment,
+    suffix: String
+): AnnotatedTypeInfo =
+    extractTypeInfo(element, name, packageName, environment, suffix)
+
+private fun extractTypeInfo(
+    element: Element,
+    nameFromAnnotation: String,
+    packageNameFromAnnotation: String,
+    environment: ProcessingEnvironment,
+    suffix: String
+): AnnotatedTypeInfo {
+    // determine appropriate names to use for the service
+    val simpleServiceName = if (nameFromAnnotation.isNotBlank()) {
+        nameFromAnnotation
+    } else {
+        element.asGeneratedInterfaceName()
+    }
+    val typeName = if (packageNameFromAnnotation.isNotBlank()) {
+        ClassName(packageNameFromAnnotation, simpleServiceName + suffix)
+    } else {
+        ClassName(
+            environment.elementUtils.getPackageOf(element).qualifiedName.toString(),
+            simpleServiceName + suffix
+        )
+    }
+    val qualifiedServiceName = if (packageNameFromAnnotation.isNotBlank()) {
+        "$packageNameFromAnnotation.$simpleServiceName"
+    } else {
+        environment.elementUtils.getPackageOf(element).qualifiedName.toString() + "." + simpleServiceName
+    }
+
+    return AnnotatedTypeInfo(
+        simpleName = simpleServiceName,
+        fullName = qualifiedServiceName,
+        type = typeName
+    )
+}
+
+/**
  * Extract the Kotlin compiler metadata from the [Element].
  *
  * The element must correspond to a Class or a [CodeGenerationException] will be thrown.
@@ -116,21 +184,12 @@ internal fun Element.asKotlinMetadata(): KotlinClassMetadata.Class {
     }
 }
 
-/** Iterate through the methods on a class or interface [Element] and map them with the given [block]. */
-internal fun <T> Element.mapRPCs(metadata: KotlinClassMetadata.Class, block: (KotlinMethodInfo, String) -> T) =
+/** Get all the methods on this element that are candidate for RPC calls */
+internal fun Element.filterRpcMethods(): List<ExecutableElement> =
     this.enclosedElements
         .filter { it.kind == ElementKind.METHOD }
         .mapNotNull { it as? ExecutableElement }
         .filter { it.parameters.size > 0 } // TODO: better filtering?
-        .map {
-            val rpcName = it.getAnnotation(GrpcMethod::class.java)?.methodName
-
-            // parse Kotlin metadata about this function
-            // TODO: avoid doing this multiple times
-            val methodInfo = metadata.describeElement(it, rpcName)
-
-            block(methodInfo, methodInfo.rpc.name.decapitalize())
-        }
 
 /** Info about a Kotlin function (including info extracted from the @Metadata annotation). */
 internal data class KotlinMethodInfo(
@@ -144,6 +203,7 @@ internal data class KotlinMethodInfo(
 /** Info about the RPC associated with a method. */
 internal data class RpcInfo(
     val name: String,
+    val packageName: String?,
     val type: MethodDescriptor.MethodType,
     val inputType: TypeName,
     val outputType: TypeName
@@ -151,8 +211,7 @@ internal data class RpcInfo(
 
 /** Parse information about a Kotlin function from the [kotlin.Metadata] annotation. */
 internal fun KotlinClassMetadata.Class.describeElement(
-    method: ExecutableElement,
-    rpcName: String?
+    method: ExecutableElement
 ): KotlinMethodInfo {
     val funName = method.simpleName.toString()
 
@@ -217,7 +276,8 @@ internal fun KotlinClassMetadata.Class.describeElement(
         parameters = parameters,
         returns = returns,
         rpc = RpcInfo(
-            name = rpcName ?: funName.capitalize(),
+            name = funName.capitalize(),
+            packageName = null,
             type = methodType,
             inputType = when (methodType) {
                 MethodDescriptor.MethodType.CLIENT_STREAMING -> inputType.extractStreamType()
@@ -290,7 +350,7 @@ private fun TypeName.extractStreamType(): TypeName {
 /** Convert from a Kotlin [kotlinx.metadata.ClassName] to a KotlinPoet [ClassName]. */
 internal fun kotlinx.metadata.ClassName.asClassName() = ClassName.bestGuess(this.replace("/", "."))
 
-/** Describes a name type parameter in a function. */
+/** Describes a named parameter in a function of the given [name] and [type]. */
 internal data class ParameterInfo(val name: String, val type: TypeName)
 
 /** Ensures the string does not equal any of the [others]. */

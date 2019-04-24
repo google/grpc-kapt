@@ -18,6 +18,7 @@ package com.google.api.grpc.kapt
 
 import com.google.api.grpc.kapt.generator.ClientGenerator
 import com.google.api.grpc.kapt.generator.Generator
+import com.google.api.grpc.kapt.generator.KAPT_PROTO_DESCRIPTOR_OPTION_NAME
 import com.google.api.grpc.kapt.generator.ServerGenerator
 import com.google.api.grpc.kapt.generator.error
 import com.squareup.kotlinpoet.asTypeName
@@ -37,7 +38,7 @@ private const val KAPT_KOTLIN_GENERATED_OPTION_NAME = "kapt.kotlin.generated"
  * Annotation processor for generating gRPC services & clients.
  */
 @SupportedSourceVersion(SourceVersion.RELEASE_8)
-@SupportedOptions(KAPT_KOTLIN_GENERATED_OPTION_NAME)
+@SupportedOptions(KAPT_KOTLIN_GENERATED_OPTION_NAME, KAPT_PROTO_DESCRIPTOR_OPTION_NAME)
 @SupportedAnnotationTypes(
     "com.google.api.grpc.kapt.GrpcClient",
     "com.google.api.grpc.kapt.GrpcServer",
@@ -91,12 +92,14 @@ class GrpcProcessor : AbstractProcessor() {
 
         // generate code
         for (el in annotatedClients) {
-            val client = clientGenerator.generate(el)
-            client.writeTo(outputDirectory)
+            for (file in clientGenerator.generate(el)) {
+                file.writeTo(outputDirectory)
+            }
         }
         for (el in annotatedServers) {
-            val server = serverGenerator.generate(el)
-            server.writeTo(outputDirectory)
+            for (file in serverGenerator.generate(el)) {
+                file.writeTo(outputDirectory)
+            }
         }
 
         // all done!

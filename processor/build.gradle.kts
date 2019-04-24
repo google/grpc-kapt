@@ -30,6 +30,7 @@ dependencies {
     
     implementation(project(":processor-annotations"))
     implementation("io.grpc:grpc-stub:1.20.0")
+    implementation("io.grpc:grpc-protobuf:1.20.0")
 
     implementation("com.squareup:kotlinpoet:1.2.0")
 

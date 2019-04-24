@@ -28,13 +28,16 @@ import kotlin.reflect.KClass
  * A [marshaller] can be provided to override the default [GrpcMarshaller] and
  * must be a singleton object that implements [MarshallerProvider].
  *
+ * Setting [definedBy] will override most settings and allows the client to be
+ * generated based on another IDL, such as protocol buffers.
+ *
  * Example:
  * ```
  * import com.google.api.grpc.kapt.GrpcClient
  * import io.grpc.ManagedChannelBuilder
  * import kotlinx.coroutines.channels.ReceiveChannel
 
- * @GrpcClient("Ask")
+ * @GrpcClient
  * interface MyService {
  *     // a unary method (most common type)
  *     suspend fun ask(question: Question): Answer
@@ -61,7 +64,8 @@ import kotlin.reflect.KClass
 @Retention(AnnotationRetention.SOURCE)
 @Target(AnnotationTarget.CLASS)
 annotation class GrpcClient(
-    val name: String,
+    val name: String = "",
     val packageName: String = "",
-    val marshaller: KClass<*> = Unit::class
+    val marshaller: KClass<*> = Unit::class,
+    val definedBy: String = ""
 )

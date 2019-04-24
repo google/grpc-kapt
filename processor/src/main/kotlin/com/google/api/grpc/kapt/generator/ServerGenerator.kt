@@ -17,7 +17,6 @@
 package com.google.api.grpc.kapt.generator
 
 import com.google.api.grpc.kapt.GrpcServer
-import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.FileSpec
 import com.squareup.kotlinpoet.FunSpec
@@ -44,7 +43,6 @@ import io.grpc.stub.StreamObserver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.channels.Channel
-import kotlinx.metadata.jvm.KotlinClassMetadata
 import javax.annotation.processing.ProcessingEnvironment
 import javax.lang.model.element.Element
 
@@ -54,41 +52,23 @@ import javax.lang.model.element.Element
 internal class ServerGenerator(
     override val environment: ProcessingEnvironment,
     private val suffix: String = "ServerImpl"
-) : Generator {
-    override fun generate(element: Element): FileSpec {
+) : Generator<List<FileSpec>> {
+    override fun generate(element: Element): List<FileSpec> {
+        val files = mutableListOf<FileSpec>()
+
         val annotation = element.getAnnotation(GrpcServer::class.java)
             ?: throw CodeGenerationException("Unsupported element: $element")
 
-        val interfaceName = element.asGeneratedInterfaceName()
         val interfaceType = element.asGeneratedInterfaceType()
 
         // get metadata required for generation
         val kmetadata = element.asKotlinMetadata()
-
-        // determine appropriate names to use for the service
-        val simpleServiceName = if (annotation.name.isNotBlank()) {
-            annotation.name
-        } else {
-            interfaceName
-        }
-        val typeName = if (annotation.packageName.isNotBlank()) {
-            ClassName(annotation.packageName, simpleServiceName + suffix)
-        } else {
-            ClassName(
-                environment.elementUtils.getPackageOf(element).qualifiedName.toString(),
-                simpleServiceName + suffix
-            )
-        }
-        val qualifiedServiceName = if (annotation.packageName.isNotBlank()) {
-            annotation.packageName + "." + simpleServiceName
-        } else {
-            environment.elementUtils.getPackageOf(element).qualifiedName.toString() + "." + simpleServiceName
-        }
+        val typeInfo = annotation.extractTypeInfo(element, environment, suffix)
 
         // determine marshaller to use
         val marshallerType = annotation.asMarshallerType()
 
-        return FileSpec.builder(typeName.packageName, typeName.simpleName)
+        val server = FileSpec.builder(typeInfo.type.packageName, typeInfo.type.simpleName)
             .addFunction(
                 FunSpec.builder("asGrpcService")
                     .addParameter(
@@ -98,7 +78,7 @@ internal class ServerGenerator(
                     )
                     .receiver(interfaceType)
                     .returns(BindableService::class)
-                    .addStatement("return %T(this, coroutineScope)", typeName)
+                    .addStatement("return %T(this, coroutineScope)", typeInfo.type)
                     .addKdoc(
                         """
                         |Create a new service that can be bound to a gRPC server.
@@ -175,7 +155,7 @@ internal class ServerGenerator(
             .addTypeAlias(methodBindingTypeAlias)
             .addFunction(methodBindingFun)
             .addType(
-                TypeSpec.classBuilder(typeName)
+                TypeSpec.classBuilder(typeInfo.type)
                     .addModifiers(KModifier.PRIVATE)
                     .addSuperinterface(BindableService::class)
                     .primaryConstructor(
@@ -193,10 +173,14 @@ internal class ServerGenerator(
                     .addProperty(
                         PropertySpec.builder("name", String::class)
                             .addModifiers(KModifier.PRIVATE)
-                            .initializer("%S", qualifiedServiceName)
+                            .initializer("%S", typeInfo.fullName)
                             .build()
                     )
-                    .addProperty(element.generateMethodDescriptors(kmetadata, marshallerType))
+                    .addProperty(
+                        element.filterRpcMethods().map {
+                            kmetadata.describeElement(it)
+                        }.asMethodDescriptor(marshallerType)
+                    )
                     .addProperty(generateServiceDescriptor())
                     .addProperty(generateServiceDefinition())
                     .addFunction(
@@ -211,168 +195,21 @@ internal class ServerGenerator(
             .addImport("kotlinx.coroutines", "launch", "runBlocking")
             .addImport("kotlinx.coroutines", "coroutineScope")
             .build()
+        files += server
+
+        return files
     }
 
-    private fun Element.generateMethodDescriptors(
-        metadata: KotlinClassMetadata.Class,
-        marshallerType: TypeName
-    ): PropertySpec {
-        val methodsInitalizers = this.mapRPCs(metadata) { methodInfo, _ ->
-            val serverCall = with(CodeBlock.builder()) {
-                indent()
-                if (methodInfo.rpc.type == MethodDescriptor.MethodType.SERVER_STREAMING) {
-                    add(
-                        """
-                        |%T.asyncServerStreamingCall { request: %T, responseObserver: %T ->
-                        |    coroutineScope.launch {
-                        |        try {
-                        |            for (data in implementation.%L(request)) {
-                        |                responseObserver.onNext(data)
-                        |            }
-                        |            responseObserver.onCompleted()
-                        |        } catch(t: Throwable) {
-                        |            responseObserver.onError(t)
-                        |        }
-                        |    }
-                        |}
-                        """.trimMargin(),
-                        ServerCalls::class.asClassName(), methodInfo.rpc.inputType,
-                        StreamObserver::class.asClassName().parameterizedBy(methodInfo.rpc.outputType),
-                        methodInfo.name
-                    )
-                } else if (methodInfo.rpc.type == MethodDescriptor.MethodType.CLIENT_STREAMING) {
-                    add(
-                        """
-                        |%T.asyncClientStreamingCall { responseObserver: %T ->
-                        |    val requestChannel: %T = Channel()
-                        |    val requestObserver = object : %T {
-                        |        override fun onNext(value: %T) {
-                        |            runBlocking { requestChannel.send(value) }
-                        |        }
-                        |
-                        |        override fun onError(t: Throwable) {
-                        |            requestChannel.close(t)
-                        |        }
-                        |
-                        |        override fun onCompleted() {
-                        |            requestChannel.close()
-                        |        }
-                        |    }
-                        |
-                        |    coroutineScope.launch {
-                        |        try {
-                        |            responseObserver.onNext(implementation.%L(requestChannel))
-                        |        } finally {
-                        |            responseObserver.onCompleted()
-                        |        }
-                        |    }
-                        |
-                        |    requestObserver
-                        |}
-                        """.trimMargin(),
-                        ServerCalls::class.asClassName(),
-                        StreamObserver::class.asClassName().parameterizedBy(methodInfo.rpc.outputType),
-                        Channel::class.asClassName().parameterizedBy(methodInfo.rpc.inputType),
-                        StreamObserver::class.asClassName().parameterizedBy(methodInfo.rpc.inputType),
-                        methodInfo.rpc.inputType,
-                        methodInfo.name
-                    )
-                } else if (methodInfo.rpc.type == MethodDescriptor.MethodType.BIDI_STREAMING) {
-                    add(
-                        """
-                        |%T.asyncBidiStreamingCall { responseObserver: %T ->
-                        |    val requestChannel: %T = Channel()
-                        |    val requestObserver = object : %T {
-                        |        override fun onNext(value: %T) {
-                        |            runBlocking { requestChannel.send(value) }
-                        |        }
-                        |
-                        |        override fun onError(t: Throwable) {
-                        |            requestChannel.close(t)
-                        |        }
-                        |
-                        |        override fun onCompleted() {
-                        |            requestChannel.close()
-                        |        }
-                        |    }
-                        |
-                        |    coroutineScope.launch {
-                        |        try {
-                        |            for (data in implementation.%L(requestChannel)) {
-                        |                responseObserver.onNext(data)
-                        |            }
-                        |            responseObserver.onCompleted()
-                        |        } catch(t: Throwable) {
-                        |            responseObserver.onError(t)
-                        |        }
-                        |    }
-                        |
-                        |    requestObserver
-                        |}
-                        """.trimMargin(),
-                        ServerCalls::class.asClassName(),
-                        StreamObserver::class.asClassName().parameterizedBy(methodInfo.rpc.outputType),
-                        Channel::class.asClassName().parameterizedBy(methodInfo.rpc.inputType),
-                        StreamObserver::class.asClassName().parameterizedBy(methodInfo.rpc.inputType),
-                        methodInfo.rpc.inputType,
-                        methodInfo.name
-                    )
-                } else { // MethodDescriptor.MethodType.UNARY
-                    add(
-                        """
-                        |%T.asyncUnaryCall { request: %T, responseObserver: %T ->
-                        |    coroutineScope.launch {
-                        |        try {
-                        |            responseObserver.onNext(implementation.%L(request))
-                        |            responseObserver.onCompleted()
-                        |        } catch(t: Throwable) {
-                        |            responseObserver.onError(t)
-                        |        }
-                        |    }
-                        |}
-                        """.trimMargin(),
-                        ServerCalls::class.asClassName(), methodInfo.rpc.inputType,
-                        StreamObserver::class.asClassName().parameterizedBy(methodInfo.rpc.outputType),
-                        methodInfo.name
-                    )
-                }
-                unindent()
-            }.build()
-
-            CodeBlock.of(
-                """
-                |methodBinding(
-                |    with(
-                |        %T.newBuilder(
-                |            %T.of(%T::class.java),
-                |            %T.of(%T::class.java)
-                |        )
-                |    ) {
-                |        setFullMethodName(
-                |            MethodDescriptor.generateFullMethodName(name, %S)
-                |        )
-                |        setType(MethodDescriptor.MethodType.%L)
-                |        build()
-                |    },
-                |    %L
-                |)
-                """.trimMargin(),
-                MethodDescriptor::class.asTypeName(),
-                marshallerType, methodInfo.rpc.inputType,
-                marshallerType, methodInfo.rpc.outputType,
-                methodInfo.rpc.name,
-                methodInfo.rpc.type.name,
-                serverCall
-            )
-        }
+    private fun List<KotlinMethodInfo>.asMethodDescriptor(marshallerType: TypeName): PropertySpec {
+        val methodsInitializers = this.map { it.asMethodDescriptor(marshallerType) }
 
         return PropertySpec.builder("methods", methodListTypeAlias.type)
             .addModifiers(KModifier.PRIVATE)
             .initializer(with(CodeBlock.builder()) {
                 add("listOf(\n")
                 indent()
-                for ((idx, code) in methodsInitalizers.withIndex()) {
-                    if (idx == methodsInitalizers.size - 1) {
+                for ((idx, code) in methodsInitializers.withIndex()) {
+                    if (idx == methodsInitializers.size - 1) {
                         addStatement("%L", code)
                     } else {
                         addStatement("%L,", code)
@@ -385,20 +222,169 @@ internal class ServerGenerator(
             .build()
     }
 
+    private fun KotlinMethodInfo.asMethodDescriptor(marshallerType: TypeName): CodeBlock {
+        val serverCall = with(CodeBlock.builder()) {
+            indent()
+            if (rpc.type == MethodDescriptor.MethodType.SERVER_STREAMING) {
+                add(
+                    """
+                    |%T.asyncServerStreamingCall { request: %T, responseObserver: %T ->
+                    |    coroutineScope.launch {
+                    |        try {
+                    |            for (data in implementation.%L(request)) {
+                    |                responseObserver.onNext(data)
+                    |            }
+                    |            responseObserver.onCompleted()
+                    |        } catch(t: Throwable) {
+                    |            responseObserver.onError(t)
+                    |        }
+                    |    }
+                    |}
+                    """.trimMargin(),
+                    ServerCalls::class.asClassName(), rpc.inputType,
+                    StreamObserver::class.asClassName().parameterizedBy(rpc.outputType),
+                    name
+                )
+            } else if (rpc.type == MethodDescriptor.MethodType.CLIENT_STREAMING) {
+                add(
+                    """
+                    |%T.asyncClientStreamingCall { responseObserver: %T ->
+                    |    val requestChannel: %T = Channel()
+                    |    val requestObserver = object : %T {
+                    |        override fun onNext(value: %T) {
+                    |            runBlocking { requestChannel.send(value) }
+                    |        }
+                    |
+                    |        override fun onError(t: Throwable) {
+                    |            requestChannel.close(t)
+                    |        }
+                    |
+                    |        override fun onCompleted() {
+                    |            requestChannel.close()
+                    |        }
+                    |    }
+                    |
+                    |    coroutineScope.launch {
+                    |        try {
+                    |            responseObserver.onNext(implementation.%L(requestChannel))
+                    |        } finally {
+                    |            responseObserver.onCompleted()
+                    |        }
+                    |    }
+                    |
+                    |    requestObserver
+                    |}
+                    """.trimMargin(),
+                    ServerCalls::class.asClassName(),
+                    StreamObserver::class.asClassName().parameterizedBy(rpc.outputType),
+                    Channel::class.asClassName().parameterizedBy(rpc.inputType),
+                    StreamObserver::class.asClassName().parameterizedBy(rpc.inputType),
+                    rpc.inputType,
+                    name
+                )
+            } else if (rpc.type == MethodDescriptor.MethodType.BIDI_STREAMING) {
+                add(
+                    """
+                    |%T.asyncBidiStreamingCall { responseObserver: %T ->
+                    |    val requestChannel: %T = Channel()
+                    |    val requestObserver = object : %T {
+                    |        override fun onNext(value: %T) {
+                    |            runBlocking { requestChannel.send(value) }
+                    |        }
+                    |
+                    |        override fun onError(t: Throwable) {
+                    |            requestChannel.close(t)
+                    |        }
+                    |
+                    |        override fun onCompleted() {
+                    |            requestChannel.close()
+                    |        }
+                    |    }
+                    |
+                    |    coroutineScope.launch {
+                    |        try {
+                    |            for (data in implementation.%L(requestChannel)) {
+                    |                responseObserver.onNext(data)
+                    |            }
+                    |            responseObserver.onCompleted()
+                    |        } catch(t: Throwable) {
+                    |            responseObserver.onError(t)
+                    |        }
+                    |    }
+                    |
+                    |    requestObserver
+                    |}
+                    """.trimMargin(),
+                    ServerCalls::class.asClassName(),
+                    StreamObserver::class.asClassName().parameterizedBy(rpc.outputType),
+                    Channel::class.asClassName().parameterizedBy(rpc.inputType),
+                    StreamObserver::class.asClassName().parameterizedBy(rpc.inputType),
+                    rpc.inputType,
+                    name
+                )
+            } else { // MethodDescriptor.MethodType.UNARY
+                add(
+                    """
+                    |%T.asyncUnaryCall { request: %T, responseObserver: %T ->
+                    |    coroutineScope.launch {
+                    |        try {
+                    |            responseObserver.onNext(implementation.%L(request))
+                    |            responseObserver.onCompleted()
+                    |        } catch(t: Throwable) {
+                    |            responseObserver.onError(t)
+                    |        }
+                    |    }
+                    |}
+                    """.trimMargin(),
+                    ServerCalls::class.asClassName(), rpc.inputType,
+                    StreamObserver::class.asClassName().parameterizedBy(rpc.outputType),
+                    name
+                )
+            }
+            unindent()
+        }.build()
+
+        return CodeBlock.of(
+            """
+            |methodBinding(
+            |    with(
+            |        %T.newBuilder(
+            |            %T.of(%T::class.java),
+            |            %T.of(%T::class.java)
+            |        )
+            |    ) {
+            |        setFullMethodName(
+            |            MethodDescriptor.generateFullMethodName(name, %S)
+            |        )
+            |        setType(MethodDescriptor.MethodType.%L)
+            |        build()
+            |    },
+            |    %L
+            |)
+            """.trimMargin(),
+            MethodDescriptor::class.asTypeName(),
+            marshallerType, rpc.inputType,
+            marshallerType, rpc.outputType,
+            rpc.name,
+            rpc.type.name,
+            serverCall
+        )
+    }
+
     private fun generateServiceDescriptor() =
         PropertySpec.builder("serviceDescriptor", ServiceDescriptor::class.asTypeName())
             .addModifiers(KModifier.PRIVATE)
             .initializer(
                 """
-            |with(
-            |    %T.newBuilder(name)
-            |) {
-            |    for ((method, _) in methods) {
-            |        addMethod(method)
-            |    }
-            |    build()
-            |}
-            |""".trimMargin(),
+                |with(
+                |    %T.newBuilder(name)
+                |) {
+                |    for ((method, _) in methods) {
+                |        addMethod(method)
+                |    }
+                |    build()
+                |}
+                |""".trimMargin(),
                 ServiceDescriptor::class.asTypeName()
             )
             .build()
@@ -408,16 +394,16 @@ internal class ServerGenerator(
             .addModifiers(KModifier.PRIVATE)
             .initializer(
                 """
-            |with(
-            |    %T.builder(serviceDescriptor)
-            |) {
-            |    for ((method, handler) in methods) {
-            |        @Suppress("UNCHECKED_CAST")
-            |        addMethod(method as %T, handler as %T)
-            |    }
-            |    build()
-            |}
-            |""".trimMargin(),
+                |with(
+                |    %T.builder(serviceDescriptor)
+                |) {
+                |    for ((method, handler) in methods) {
+                |        @Suppress("UNCHECKED_CAST")
+                |        addMethod(method as %T, handler as %T)
+                |    }
+                |    build()
+                |}
+                |""".trimMargin(),
                 ServerServiceDefinition::class.asTypeName(),
                 MethodDescriptor::class.asClassName().parameterizedBy(Any::class.asTypeName(), Any::class.asTypeName()),
                 ServerCallHandler::class.asClassName().parameterizedBy(Any::class.asTypeName(), Any::class.asTypeName())

@@ -28,6 +28,7 @@ dependencies {
 
     compile(project(":example"))
     compile(project(":example-with-streams"))
+    compile(project(":example-with-google-api"))
 }
 
 allprojects {
@@ -87,5 +88,8 @@ tasks {
     }
     val runExampleWithStreams by registering {
         dependsOn(getByPath(":example-with-streams:run"))
+    }
+    val runExampleWithGoogle by registering {
+        dependsOn(getByPath(":example-with-google-api:run"))
     }
 }
