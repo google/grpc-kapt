@@ -23,7 +23,6 @@ import com.google.cloud.language.v1.AnalyzeEntitiesRequest
 import com.google.cloud.language.v1.Document
 import com.google.protobuf.Message
 import io.grpc.CallOptions
-import io.grpc.ManagedChannelBuilder
 import io.grpc.MethodDescriptor
 import io.grpc.auth.MoreCallCredentials
 import io.grpc.protobuf.ProtoUtils
@@ -34,7 +33,7 @@ import kotlinx.coroutines.runBlocking
  * valid credentials file and have permission to use the [Language API](https://cloud.google.com/natural-language).
  */
 fun main(): Unit = runBlocking {
-    // configure the client to use the auth credentials
+    // configure the client to use Google auth credentials
     val options = CallOptions.DEFAULT
         .withCallCredentials(
             MoreCallCredentials.from(
@@ -42,19 +41,17 @@ fun main(): Unit = runBlocking {
             )
         )
 
-    ManagedChannelBuilder
-        .forAddress("language.googleapis.com", 443)
-        .asGoogleLanguageServiceClient(options).use {
-            val response = it.analyzeEntities(with(AnalyzeEntitiesRequest.newBuilder()) {
-                document = with(Document.newBuilder()) {
-                    content = "Hi there Joe!"
-                    type = Document.Type.PLAIN_TEXT
-                    build()
-                }
+    LanguageService.forAddress("language.googleapis.com", 443, callOptions = options).use {
+        val response = it.analyzeEntities(with(AnalyzeEntitiesRequest.newBuilder()) {
+            document = with(Document.newBuilder()) {
+                content = "Hi there Joe!"
+                type = Document.Type.PLAIN_TEXT
                 build()
-            })
-            println(response)
-        }
+            }
+            build()
+        })
+        println(response)
+    }
 }
 
 // generate a gRPC client

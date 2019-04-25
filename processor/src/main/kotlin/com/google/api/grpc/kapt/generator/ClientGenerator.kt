@@ -22,12 +22,14 @@ import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.FileSpec
 import com.squareup.kotlinpoet.FunSpec
 import com.squareup.kotlinpoet.KModifier
+import com.squareup.kotlinpoet.LambdaTypeName
 import com.squareup.kotlinpoet.ParameterSpec
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import com.squareup.kotlinpoet.PropertySpec
 import com.squareup.kotlinpoet.TypeName
 import com.squareup.kotlinpoet.TypeSpec
 import com.squareup.kotlinpoet.TypeVariableName
+import com.squareup.kotlinpoet.UNIT
 import com.squareup.kotlinpoet.asClassName
 import com.squareup.kotlinpoet.asTypeName
 import io.grpc.CallOptions
@@ -70,8 +72,9 @@ internal class ClientGenerator(
         val generatedInterface = if (annotation.definedBy.isNotBlank()) {
             protoGenerator.generate(element)
         } else {
+            val clientTypeSimpleName = "${interfaceName}Client"
             GeneratedInterface(
-                TypeSpec.interfaceBuilder("${interfaceName}Client")
+                TypeSpec.interfaceBuilder(clientTypeSimpleName)
                     .addKdoc(
                         """
                         |A gRPC client for [%L] using the [channel] governed by the [callOptions].
@@ -81,6 +84,11 @@ internal class ClientGenerator(
                     .addSuperinterface(element.asGeneratedInterfaceType())
                     .addSuperinterface(AutoCloseable::class)
                     .addProperties(COMMON_INTERFACE_PROPERTIES)
+                    .addType(
+                        TypeSpec.companionObjectBuilder()
+                            .addFunctions(createChannelBuilders(ClassName("", clientTypeSimpleName)))
+                            .build()
+                    )
                     .build(),
                 mapOf()
             )
@@ -94,7 +102,7 @@ internal class ClientGenerator(
 
         // add the constructor extension methods
         clientBuilder.addFunction(
-            FunSpec.builder("as${interfaceName}Client")
+            FunSpec.builder("as${generatedInterface.type.name}")
                 .receiver(ManagedChannelBuilder::class.asClassName().parameterizedBy(TypeVariableName("*")))
                 .addParameter(
                     ParameterSpec.builder("callOptions", CallOptions::class)
@@ -426,6 +434,37 @@ internal class ClientGenerator(
                 .build(),
             PropertySpec.builder("callOptions", CallOptions::class)
                 .addKdoc("The [callOptions] that were used to create the client.")
+                .build()
+        )
+
+        /** Creates the common constructors */
+        fun createChannelBuilders(type: ClassName) = listOf(
+            FunSpec.builder("forAddress")
+                .returns(type)
+                .addParameter("host", String::class)
+                .addParameter("port", Int::class)
+                .addParameter(
+                    ParameterSpec.builder("callOptions", CallOptions::class)
+                        .defaultValue("%T.DEFAULT", CallOptions::class)
+                        .build()
+                )
+                .addParameter(
+                    ParameterSpec.builder(
+                        "channelOptions",
+                        LambdaTypeName.get(
+                            ManagedChannelBuilder::class.asClassName().parameterizedBy(TypeVariableName("*")),
+                            listOf(),
+                            UNIT
+                        )
+                    )
+                        .defaultValue("{}")
+                        .build()
+                )
+                .addCode(
+                    "return %T.forAddress(host, port).apply(channelOptions).as%L(callOptions)",
+                    ManagedChannelBuilder::class,
+                    type.simpleName
+                )
                 .build()
         )
     }

@@ -23,6 +23,8 @@ plugins {
 dependencies {
     implementation(kotlin("stdlib-jdk8"))
 
+    api(project(":processor-utils"))
+
     api("io.grpc:grpc-stub:1.20.0")
 
     testImplementation(kotlin("test"))

@@ -18,4 +18,45 @@
 
 package com.google.api.example
 
-class ExampleTest
+import com.google.auth.oauth2.GoogleCredentials
+import com.google.cloud.language.v1.AnalyzeEntitiesRequest
+import com.google.cloud.language.v1.Document
+import com.google.cloud.language.v1.Entity
+import io.grpc.CallOptions
+import io.grpc.auth.MoreCallCredentials
+import kotlinx.coroutines.runBlocking
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class ExampleTest {
+
+    @Test
+    fun `can call the language api`() = withClient { client ->
+        val response = client.analyzeEntities(with(AnalyzeEntitiesRequest.newBuilder()) {
+            document = with(Document.newBuilder()) {
+                content = "Hi there Joe!"
+                type = Document.Type.PLAIN_TEXT
+                build()
+            }
+            build()
+        })
+
+        val people = response.entitiesList.filter { it.type == Entity.Type.PERSON }
+
+        assertEquals(1, people.size)
+        assertEquals("Joe", people.first().name)
+    }
+}
+
+private fun <T> withClient(block: suspend (LanguageService) -> T) = runBlocking {
+    val options = CallOptions.DEFAULT
+        .withCallCredentials(
+            MoreCallCredentials.from(
+                GoogleCredentials.getApplicationDefault()
+            )
+        )
+
+    LanguageService.forAddress("language.googleapis.com", 443, callOptions = options).use {
+        block(it)
+    }
+}

@@ -30,7 +30,7 @@ import kotlin.test.assertEquals
 class ExampleTest {
 
     companion object {
-        private var server = ComplexServiceServer().asGrpcServer(8282).also { it.start() }
+        private var server = ComplexServer().asGrpcServer(8282).also { it.start() }
 
         @AfterClass
         @JvmStatic
@@ -76,7 +76,7 @@ class ExampleTest {
     }
 }
 
-private fun <T> withClient(port: Int = 8282, block: suspend (AskClientImpl) -> T) = runBlocking {
+private fun <T> withClient(port: Int = 8282, block: suspend (ComplexServiceClient) -> T) = runBlocking {
     ManagedChannelBuilder
         .forAddress("localhost", port)
         .usePlaintext()

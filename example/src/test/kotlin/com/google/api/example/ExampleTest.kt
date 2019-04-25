@@ -18,7 +18,6 @@
 
 package com.google.api.example
 
-import io.grpc.ManagedChannelBuilder
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -32,13 +31,10 @@ class ExampleTest {
     }
 }
 
-private fun <T> withClient(port: Int = 8181, block: suspend (AskClientImpl) -> T) = runBlocking {
-    SimpleServiceServer().asGrpcServer(port) {
-        ManagedChannelBuilder
-            .forAddress("localhost", port)
-            .usePlaintext()
-            .asSimpleServiceClient().use {
-                block(it)
-            }
+private fun <T> withClient(port: Int = 8181, block: suspend (SimpleServiceClient) -> T) = runBlocking {
+    SimpleServer().asGrpcServer(port) {
+        SimpleServiceClient.forAddress("localhost", port, channelOptions = {
+            usePlaintext()
+        }).use { block(it) }
     }
 }

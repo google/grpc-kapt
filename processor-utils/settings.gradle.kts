@@ -15,12 +15,4 @@
  */
 
 
-rootProject.name = "grpc-kapt"
-
-include("processor")
-include("processor-annotations")
-include("processor-utils")
-
-include("example")
-include("example-with-streams")
-include("example-with-google-api")
+rootProject.name = "processor-utils"

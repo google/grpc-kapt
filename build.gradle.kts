@@ -25,6 +25,7 @@ dependencies {
 
     compile(project(":processor"))
     compile(project(":processor-annotations"))
+    compile(project(":processor-utils"))
 
     compile(project(":example"))
     compile(project(":example-with-streams"))

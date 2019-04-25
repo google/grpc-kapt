@@ -21,7 +21,6 @@ import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.google.api.grpc.kapt.GrpcClient
 import com.google.api.grpc.kapt.GrpcMarshaller
 import com.google.api.grpc.kapt.GrpcServer
-import io.grpc.ManagedChannelBuilder
 import io.grpc.MethodDescriptor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.ReceiveChannel
@@ -47,37 +46,36 @@ fun main() = runBlocking {
         println("Server started on port: $PORT\n")
 
         // create a client with a new channel and call the server
-        ManagedChannelBuilder
-            .forAddress("localhost", PORT)
-            .usePlaintext()
-            .asComplexServiceClient().use { client ->
-                // unary call
-                println(client.ask(Question("what's this?")))
-                println()
+        ComplexServiceClient.forAddress("localhost", PORT, channelOptions = {
+            usePlaintext()
+        }).use { client ->
+            // unary call
+            println(client.ask(Question("what's this?")))
+            println()
 
-                // server streaming
-                for (answer in client.lecture(Question("my favorite topic"))) {
-                    println(answer)
-                }
-                println()
-
-                // client streaming
-                println(client.listen(produce {
-                    repeat(10) { i ->
-                        send(Question("I" + " still".repeat(i) + " have a question [#${i + 1}]"))
-                    }
-                }))
-                println()
-
-                // bidirectional streaming
-                val answers = client.debate(produce {
-                    repeat(10) { i -> send(Question("[#${i + 1}]")) }
-                })
-                for (answer in answers) {
-                    println(answer)
-                }
-                println()
+            // server streaming
+            for (answer in client.lecture(Question("my favorite topic"))) {
+                println(answer)
             }
+            println()
+
+            // client streaming
+            println(client.listen(produce {
+                repeat(10) { i ->
+                    send(Question("I" + " still".repeat(i) + " have a question [#${i + 1}]"))
+                }
+            }))
+            println()
+
+            // bidirectional streaming
+            val answers = client.debate(produce {
+                repeat(10) { i -> send(Question("[#${i + 1}]")) }
+            })
+            for (answer in answers) {
+                println(answer)
+            }
+            println()
+        }
     }
     println("Server terminated.")
 }

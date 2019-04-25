@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google LLC
+ * Copyright 2018 Google LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,13 +14,18 @@
  * limitations under the License.
  */
 
+plugins {
+    idea
+    maven
+    kotlin("jvm")
+}
 
-rootProject.name = "grpc-kapt"
+dependencies {
+    implementation(kotlin("stdlib-jdk8"))
 
-include("processor")
-include("processor-annotations")
-include("processor-utils")
+    api("io.grpc:grpc-stub:1.20.0")
 
-include("example")
-include("example-with-streams")
-include("example-with-google-api")
+    testImplementation(kotlin("test"))
+    testImplementation(kotlin("test-junit"))
+    testImplementation("junit:junit:4.12")
+}

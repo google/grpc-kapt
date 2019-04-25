@@ -18,7 +18,6 @@ package com.google.api.example
 
 import com.google.api.grpc.kapt.GrpcClient
 import com.google.api.grpc.kapt.GrpcServer
-import io.grpc.ManagedChannelBuilder
 import kotlinx.coroutines.runBlocking
 
 private const val PORT = 8080
@@ -34,13 +33,12 @@ fun main() = runBlocking {
     // create the server
     SimpleServer().asGrpcServer(PORT) {
         // create a client with a new channel and call the server
-        ManagedChannelBuilder
-            .forAddress("localhost", PORT)
-            .usePlaintext()
-            .asSimpleServiceClient().use {
-                val answer = it.ask(Question("what's this?"))
-                println(answer)
-            }
+        SimpleServiceClient.forAddress("localhost", PORT, channelOptions = {
+            usePlaintext()
+        }).use {
+            val answer = it.ask(Question("what's this?"))
+            println(answer)
+        }
     }
 }
 

@@ -27,6 +27,7 @@ import com.google.api.grpc.kapt.generator.KotlinMethodInfo
 import com.google.api.grpc.kapt.generator.ParameterInfo
 import com.google.api.grpc.kapt.generator.RpcInfo
 import com.google.protobuf.DescriptorProtos
+import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.FunSpec
 import com.squareup.kotlinpoet.KModifier
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
@@ -78,6 +79,9 @@ internal class ProtoInterfaceGenerator(
             .addSuperinterface(element.asType().asTypeName())
             .addSuperinterface(AutoCloseable::class)
             .addProperties(ClientGenerator.COMMON_INTERFACE_PROPERTIES)
+            .addType(TypeSpec.companionObjectBuilder()
+                .addFunctions(ClientGenerator.createChannelBuilders(ClassName("", service.name)))
+                .build())
         val funMap = mutableMapOf<FunSpec, KotlinMethodInfo>()
 
         // add all the functions
