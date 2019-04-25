@@ -17,8 +17,9 @@
 package com.google.api.grpc.kapt
 
 import com.google.api.grpc.kapt.generator.ClientGenerator
+import com.google.api.grpc.kapt.generator.CodeGenerationException
 import com.google.api.grpc.kapt.generator.Generator
-import com.google.api.grpc.kapt.generator.KAPT_PROTO_DESCRIPTOR_OPTION_NAME
+import com.google.api.grpc.kapt.generator.proto.KAPT_PROTO_DESCRIPTOR_OPTION_NAME
 import com.google.api.grpc.kapt.generator.ServerGenerator
 import com.google.api.grpc.kapt.generator.error
 import com.squareup.kotlinpoet.asTypeName
@@ -29,6 +30,7 @@ import javax.annotation.processing.SupportedAnnotationTypes
 import javax.annotation.processing.SupportedOptions
 import javax.annotation.processing.SupportedSourceVersion
 import javax.lang.model.SourceVersion
+import javax.lang.model.element.Element
 import javax.lang.model.element.ElementKind
 import javax.lang.model.element.TypeElement
 
@@ -38,7 +40,9 @@ private const val KAPT_KOTLIN_GENERATED_OPTION_NAME = "kapt.kotlin.generated"
  * Annotation processor for generating gRPC services & clients.
  */
 @SupportedSourceVersion(SourceVersion.RELEASE_8)
-@SupportedOptions(KAPT_KOTLIN_GENERATED_OPTION_NAME, KAPT_PROTO_DESCRIPTOR_OPTION_NAME)
+@SupportedOptions(KAPT_KOTLIN_GENERATED_OPTION_NAME,
+    KAPT_PROTO_DESCRIPTOR_OPTION_NAME
+)
 @SupportedAnnotationTypes(
     "com.google.api.grpc.kapt.GrpcClient",
     "com.google.api.grpc.kapt.GrpcServer",
@@ -47,13 +51,10 @@ private const val KAPT_KOTLIN_GENERATED_OPTION_NAME = "kapt.kotlin.generated"
 )
 class GrpcProcessor : AbstractProcessor() {
 
-    private val clientGenerator by lazy { ClientGenerator(processingEnv) }
-    private val serverGenerator by lazy { ServerGenerator(processingEnv) }
-
-    override fun process(annotations: MutableSet<out TypeElement>?, roundEnv: RoundEnvironment): Boolean {
-        val annotatedMarshallers = roundEnv.getElementsAnnotatedWith(GrpcMarshaller::class.java)
-        val annotatedClients = roundEnv.getElementsAnnotatedWith(GrpcClient::class.java)
-        val annotatedServers = roundEnv.getElementsAnnotatedWith(GrpcServer::class.java)
+    override fun process(annotations: MutableSet<out TypeElement>, roundEnv: RoundEnvironment): Boolean {
+        val annotatedMarshallers = roundEnv.getElementsAnnotatedWith(GrpcMarshaller::class.java).toSet<Element>()
+        val annotatedClients = roundEnv.getElementsAnnotatedWith(GrpcClient::class.java).toSet<Element>()
+        val annotatedServers = roundEnv.getElementsAnnotatedWith(GrpcServer::class.java).toSet<Element>()
 
         // sanity checks
         if (annotatedClients.any { it.kind != ElementKind.INTERFACE }) {
@@ -90,16 +91,27 @@ class GrpcProcessor : AbstractProcessor() {
         }
         val outputDirectory = File(outputPath).also { it.mkdirs() }
 
+        // create generators
+        val clientGenerator = ClientGenerator(processingEnv)
+        val serverGenerator = ServerGenerator(processingEnv, annotatedClients)
+
         // generate code
-        for (el in annotatedClients) {
-            for (file in clientGenerator.generate(el)) {
-                file.writeTo(outputDirectory)
+        try {
+            for (el in annotatedClients) {
+                for (file in clientGenerator.generate(el)) {
+                    file.writeTo(outputDirectory)
+                }
             }
-        }
-        for (el in annotatedServers) {
-            for (file in serverGenerator.generate(el)) {
-                file.writeTo(outputDirectory)
+            for (el in annotatedServers) {
+                for (file in serverGenerator.generate(el)) {
+                    file.writeTo(outputDirectory)
+                }
             }
+        } catch (ex: CodeGenerationException) {
+            processingEnv.error("Code generator error: $ex")
+        } catch (t: Throwable) {
+            processingEnv.error("Unexpected error: $t")
+            throw t
         }
 
         // all done!

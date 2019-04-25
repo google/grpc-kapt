@@ -59,7 +59,8 @@ import kotlin.reflect.KClass
 @Retention(AnnotationRetention.SOURCE)
 @Target(AnnotationTarget.CLASS)
 annotation class GrpcServer(
-    val name: String,
+    val name: String = "",
     val packageName: String = "",
-    val marshaller: KClass<*> = Unit::class
+    val marshaller: KClass<*> = Unit::class,
+    val suffix: String = "Impl"
 )

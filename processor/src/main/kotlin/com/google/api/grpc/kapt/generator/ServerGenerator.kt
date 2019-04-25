@@ -16,6 +16,7 @@
 
 package com.google.api.grpc.kapt.generator
 
+import com.google.api.grpc.kapt.GrpcClient
 import com.google.api.grpc.kapt.GrpcServer
 import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.FileSpec
@@ -51,7 +52,7 @@ import javax.lang.model.element.Element
  */
 internal class ServerGenerator(
     override val environment: ProcessingEnvironment,
-    private val suffix: String = "ServerImpl"
+    private val clientElements: Collection<Element>
 ) : Generator<List<FileSpec>> {
     override fun generate(element: Element): List<FileSpec> {
         val files = mutableListOf<FileSpec>()
@@ -63,11 +64,16 @@ internal class ServerGenerator(
 
         // get metadata required for generation
         val kmetadata = element.asKotlinMetadata()
-        val typeInfo = annotation.extractTypeInfo(element, environment, suffix)
+        val typeInfo = annotation.extractTypeInfo(element, environment, annotation.suffix)
 
         // determine marshaller to use
         val marshallerType = annotation.asMarshallerType()
 
+        // determine the full service name (use the implemented interfaces, if available)
+        val clientInterfaceTypeInfo = getClientAnnotation(element)
+        val fullServiceName = clientInterfaceTypeInfo?.fullName ?: typeInfo.fullName
+
+        // create the server
         val server = FileSpec.builder(typeInfo.type.packageName, typeInfo.type.simpleName)
             .addFunction(
                 FunSpec.builder("asGrpcService")
@@ -173,7 +179,7 @@ internal class ServerGenerator(
                     .addProperty(
                         PropertySpec.builder("name", String::class)
                             .addModifiers(KModifier.PRIVATE)
-                            .initializer("%S", typeInfo.fullName)
+                            .initializer("%S", fullServiceName)
                             .build()
                     )
                     .addProperty(
@@ -409,6 +415,20 @@ internal class ServerGenerator(
                 ServerCallHandler::class.asClassName().parameterizedBy(Any::class.asTypeName(), Any::class.asTypeName())
             )
             .build()
+
+    // get the matching @GrpcClient annotation for this element (if it exists)
+    private fun getClientAnnotation(element: Element): AnnotatedTypeInfo? {
+        for (superType in environment.typeUtils.directSupertypes(element.asType())) {
+            val clientInterface = clientElements.firstOrNull {
+                environment.typeUtils.isSameType(it.asType(), superType)
+            }
+            val clientAnnotation = clientInterface?.getAnnotation(GrpcClient::class.java)
+            if (clientAnnotation != null) {
+                return clientAnnotation.extractTypeInfo(clientInterface, environment, "")
+            }
+        }
+        return null
+    }
 }
 
 // various type aliases and help functions to simplify the generated code

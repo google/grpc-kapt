@@ -17,6 +17,7 @@
 package com.google.api.grpc.kapt.generator
 
 import com.google.api.grpc.kapt.GrpcClient
+import com.google.api.grpc.kapt.generator.proto.ProtoInterfaceGenerator
 import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.FileSpec
 import com.squareup.kotlinpoet.FunSpec
@@ -48,8 +49,7 @@ import javax.lang.model.element.Element
  * Generates a gRPC client from an interface annotated with [GrpcClient].
  */
 internal class ClientGenerator(
-    override val environment: ProcessingEnvironment,
-    private val suffix: String = "ClientImpl"
+    override val environment: ProcessingEnvironment
 ) : Generator<List<FileSpec>> {
     private val protoGenerator by lazy {
         ProtoInterfaceGenerator(environment)
@@ -59,22 +59,34 @@ internal class ClientGenerator(
         val annotation = element.getAnnotation(GrpcClient::class.java)
             ?: throw CodeGenerationException("Unsupported element: $element")
 
-        val interfaceName = element.asGeneratedInterfaceName()
-        val interfaceType = element.asGeneratedInterfaceType()
-
         // get metadata required for generation
         val kmetadata = element.asKotlinMetadata()
-        val typeInfo = annotation.extractTypeInfo(element, environment, suffix)
+        val typeInfo = annotation.extractTypeInfo(element, environment, annotation.suffix)
+
+        val interfaceName = element.asGeneratedInterfaceName()
 
         // if this element is defined by another model (i.e. proto IDL)
         // then generate the interface and append to the client method list
         val generatedInterface = if (annotation.definedBy.isNotBlank()) {
             protoGenerator.generate(element)
         } else {
-            null
+            GeneratedInterface(
+                TypeSpec.interfaceBuilder("${interfaceName}Client")
+                    .addKdoc(
+                        """
+                        |A gRPC client for [%L] using the [channel] governed by the [callOptions].
+                        """.trimMargin(),
+                        interfaceName
+                    )
+                    .addSuperinterface(element.asGeneratedInterfaceType())
+                    .addSuperinterface(AutoCloseable::class)
+                    .addProperties(COMMON_INTERFACE_PROPERTIES)
+                    .build(),
+                mapOf()
+            )
         }
 
-        // determine marshaller to use
+        val interfaceType = ClassName(typeInfo.type.packageName, generatedInterface.type.name!!)
         val marshallerType = annotation.asMarshallerType()
 
         // generate the client
@@ -94,7 +106,7 @@ internal class ClientGenerator(
                         .defaultValue("%T", GlobalScope::class.asClassName())
                         .build()
                 )
-                .returns(typeInfo.type)
+                .returns(interfaceType)
                 .addStatement("return %T(this.build(), callOptions, coroutineScope)", typeInfo.type)
                 .addKdoc(
                     """
@@ -106,55 +118,39 @@ internal class ClientGenerator(
                     GlobalScope::class.asTypeName()
                 )
                 .build()
-        )
-            .addFunction(
-                FunSpec.builder("as${interfaceName}Client")
-                    .receiver(ManagedChannel::class)
-                    .addParameter(
-                        ParameterSpec.builder("callOptions", CallOptions::class)
-                            .defaultValue("%T.DEFAULT", CallOptions::class.asTypeName())
-                            .build()
-                    )
-                    .addParameter(
-                        ParameterSpec.builder("coroutineScope", CoroutineScope::class.asClassName())
-                            .defaultValue("%T", GlobalScope::class.asClassName())
-                            .build()
-                    )
-                    .returns(typeInfo.type)
-                    .addStatement("return %T(this, callOptions, coroutineScope)", typeInfo.type)
-                    .addKdoc(
-                        """
+        ).addFunction(
+            FunSpec.builder("as${interfaceName}Client")
+                .receiver(ManagedChannel::class)
+                .addParameter(
+                    ParameterSpec.builder("callOptions", CallOptions::class)
+                        .defaultValue("%T.DEFAULT", CallOptions::class.asTypeName())
+                        .build()
+                )
+                .addParameter(
+                    ParameterSpec.builder("coroutineScope", CoroutineScope::class.asClassName())
+                        .defaultValue("%T", GlobalScope::class.asClassName())
+                        .build()
+                )
+                .returns(interfaceType)
+                .addStatement("return %T(this, callOptions, coroutineScope)", typeInfo.type)
+                .addKdoc(
+                    """
                         |Create a new client using the given [%T] and [callOptions].
                         |
                         |Streaming methods are launched in the [coroutineScope], which is the [%T] by default.
                         """.trimMargin(),
-                        ManagedChannel::class,
-                        GlobalScope::class.asTypeName()
-                    )
-                    .build()
-            )
-
-        // add the types
-        if (generatedInterface != null) {
-            clientBuilder.addType(generatedInterface.type)
-        }
-        clientBuilder.addType(
-            with(TypeSpec.classBuilder(typeInfo.type)) {
-                addKdoc(
-                    """
-                    |A gRPC client for [%T] governed by the [callOptions].
-                    |
-                    |Streaming methods are launched in the [coroutineScope], which is the [%T] by default.
-                    """.trimMargin(),
-                    interfaceType,
+                    ManagedChannel::class,
                     GlobalScope::class.asTypeName()
                 )
-                if (generatedInterface != null) {
-                    addSuperinterface(ClassName(typeInfo.type.packageName, generatedInterface.type.name!!))
-                } else {
-                    addSuperinterface(interfaceType)
-                }
-                addSuperinterface(AutoCloseable::class)
+                .build()
+        )
+
+        // add the types
+        clientBuilder.addType(generatedInterface.type)
+        clientBuilder.addType(
+            with(TypeSpec.classBuilder(typeInfo.type)) {
+                addModifiers(KModifier.PRIVATE)
+                addSuperinterface(interfaceType)
                 primaryConstructor(
                     FunSpec.constructorBuilder()
                         .addParameter("channel", ManagedChannel::class)
@@ -172,13 +168,13 @@ internal class ClientGenerator(
                 )
                 addProperty(
                     PropertySpec.builder("channel", ManagedChannel::class)
-                        .addModifiers(KModifier.PRIVATE)
+                        .addModifiers(KModifier.OVERRIDE)
                         .initializer("channel")
                         .build()
                 )
                 addProperty(
                     PropertySpec.builder("callOptions", CallOptions::class)
-                        .addModifiers(KModifier.PRIVATE)
+                        .addModifiers(KModifier.OVERRIDE)
                         .initializer("callOptions")
                         .build()
                 )
@@ -195,15 +191,15 @@ internal class ClientGenerator(
                     }
                 )
                 addProperties(
-                    generatedInterface?.asMethods()?.map {
+                    generatedInterface.asMethods().map {
                         it.asDescriptorProperty(typeInfo, marshallerType)
-                    } ?: listOf()
+                    }
                 )
                 addFunctions(
                     element.filterRpcMethods().map { kmetadata.describeElement(it).asRpcMethod() }
                 )
                 addFunctions(
-                    generatedInterface?.asMethods()?.map { it.asRpcMethod() } ?: listOf()
+                    generatedInterface.asMethods().map { it.asRpcMethod() }
                 )
                 addFunction(
                     FunSpec.builder("close")
@@ -420,5 +416,17 @@ internal class ClientGenerator(
                 rpc.type.name
             )
             .build()
+    }
+
+    companion object {
+        /** All properties on the client interface type. */
+        val COMMON_INTERFACE_PROPERTIES = listOf(
+            PropertySpec.builder("channel", ManagedChannel::class)
+                .addKdoc("The [channel] that was used to create the client.")
+                .build(),
+            PropertySpec.builder("callOptions", CallOptions::class)
+                .addKdoc("The [callOptions] that were used to create the client.")
+                .build()
+        )
     }
 }

@@ -67,5 +67,6 @@ annotation class GrpcClient(
     val name: String = "",
     val packageName: String = "",
     val marshaller: KClass<*> = Unit::class,
-    val definedBy: String = ""
+    val definedBy: String = "",
+    val suffix: String = "Impl"
 )

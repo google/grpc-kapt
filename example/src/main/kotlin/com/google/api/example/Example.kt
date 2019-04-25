@@ -32,7 +32,7 @@ private const val PORT = 8080
  */
 fun main() = runBlocking {
     // create the server
-    SimpleServiceServer().asGrpcServer(PORT) {
+    SimpleServer().asGrpcServer(PORT) {
         // create a client with a new channel and call the server
         ManagedChannelBuilder
             .forAddress("localhost", PORT)
@@ -50,13 +50,13 @@ data class Question(val query: String)
 data class Answer(val result: String)
 
 // generate a gRPC client
-@GrpcClient("Ask")
+@GrpcClient
 interface SimpleService {
     suspend fun ask(question: Question): Answer
 }
 
 // generate a gRPC service
-@GrpcServer("Ask")
-class SimpleServiceServer : SimpleService {
+@GrpcServer
+class SimpleServer : SimpleService {
     override suspend fun ask(question: Question) = Answer(result = "you said: '${question.query}'")
 }

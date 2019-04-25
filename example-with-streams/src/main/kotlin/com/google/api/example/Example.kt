@@ -43,26 +43,26 @@ private const val PORT = 8080
  */
 fun main() = runBlocking {
     // create the server
-    ComplexServiceServer().asGrpcServer(PORT) {
+    ComplexServer().asGrpcServer(PORT) {
         println("Server started on port: $PORT\n")
 
         // create a client with a new channel and call the server
         ManagedChannelBuilder
             .forAddress("localhost", PORT)
             .usePlaintext()
-            .asComplexServiceClient().use {
+            .asComplexServiceClient().use { client ->
                 // unary call
-                println(it.ask(Question("what's this?")))
+                println(client.ask(Question("what's this?")))
                 println()
 
                 // server streaming
-                for (answer in it.lecture(Question("my favorite topic"))) {
+                for (answer in client.lecture(Question("my favorite topic"))) {
                     println(answer)
                 }
                 println()
 
                 // client streaming
-                println(it.listen(produce {
+                println(client.listen(produce {
                     repeat(10) { i ->
                         send(Question("I" + " still".repeat(i) + " have a question [#${i + 1}]"))
                     }
@@ -70,7 +70,7 @@ fun main() = runBlocking {
                 println()
 
                 // bidirectional streaming
-                val answers = it.debate(produce {
+                val answers = client.debate(produce {
                     repeat(10) { i -> send(Question("[#${i + 1}]")) }
                 })
                 for (answer in answers) {
@@ -88,7 +88,7 @@ data class Question(val query: String)
 data class Answer(val result: String)
 
 // generate a gRPC client
-@GrpcClient("Ask")
+@GrpcClient
 interface ComplexService {
     suspend fun ask(question: Question): Answer
     suspend fun lecture(topic: Question): ReceiveChannel<Answer>
@@ -97,8 +97,8 @@ interface ComplexService {
 }
 
 // generate a gRPC service
-@GrpcServer("Ask")
-class ComplexServiceServer : ComplexService {
+@GrpcServer
+class ComplexServer : ComplexService {
 
     override suspend fun ask(question: Question) = Answer(result = "you said: '${question.query}'")
 
@@ -116,12 +116,11 @@ class ComplexServiceServer : ComplexService {
         return Answer("Great questions everyone!")
     }
 
-    override suspend fun debate(questions: ReceiveChannel<Question>): ReceiveChannel<Answer> =
-        CoroutineScope(coroutineContext).produce {
-            for (question in questions) {
-                send(Answer("${question.query}? Sorry, I don't know..."))
-            }
+    override suspend fun debate(questions: ReceiveChannel<Question>) = CoroutineScope(coroutineContext).produce {
+        for (question in questions) {
+            send(Answer("${question.query}? Sorry, I don't know..."))
         }
+    }
 }
 
 @GrpcMarshaller
