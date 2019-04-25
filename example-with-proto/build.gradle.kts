@@ -14,12 +14,18 @@
  * limitations under the License.
  */
 
+import com.google.protobuf.gradle.protobuf
+import com.google.protobuf.gradle.protoc
+import com.google.protobuf.gradle.generateProtoTasks
+import com.google.protobuf.gradle.ofSourceSet
+
 plugins {
     idea
     maven
     application
     kotlin("jvm")
     kotlin("kapt")
+    id("com.google.protobuf") version "0.8.8"
 }
 
 application {
@@ -36,15 +42,31 @@ dependencies {
 
     implementation("io.grpc:grpc-netty-shaded:1.20.0")
     implementation("io.grpc:grpc-stub:1.20.0")
-
+    implementation("io.grpc:grpc-protobuf:1.20.0")
+    
     testImplementation(kotlin("test"))
     testImplementation(kotlin("test-junit"))
     testImplementation("junit:junit:4.12")
 
-    // add the annotations to the projects
-    // this can be a compileOnly dependency if you provide your own data marshaller (see example-with-json)
-    implementation(project(":processor-annotations"))
-    
     // add the annotation process to generate the gRPC code
+    compileOnly(project(":processor-annotations"))
     kapt(project(":processor"))
+}
+
+kapt {
+    arguments {
+        arg("protos", "$buildDir/generated/source/proto/main/descriptor_set.desc")
+    }
+}
+
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:3.7.1"
+    }
+    generateProtoTasks {
+        ofSourceSet("main").forEach {
+            it.generateDescriptorSet = true
+            it.descriptorSetOptions.includeSourceInfo = true
+        }
+    }
 }

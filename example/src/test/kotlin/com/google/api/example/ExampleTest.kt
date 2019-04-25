@@ -22,6 +22,8 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
+private const val PORT = 8181
+
 class ExampleTest {
 
     @Test
@@ -31,10 +33,12 @@ class ExampleTest {
     }
 }
 
-private fun <T> withClient(port: Int = 8181, block: suspend (SimpleServiceClient) -> T) = runBlocking {
-    SimpleServer().asGrpcServer(port) {
-        SimpleServiceClient.forAddress("localhost", port, channelOptions = {
+private fun <T> withClient(block: suspend (SimpleServiceClient) -> T) = runBlocking {
+    SimpleServer().asGrpcServer(PORT) {
+        SimpleServiceClient.forAddress("localhost", PORT, channelOptions = {
             usePlaintext()
-        }).use { block(it) }
+        }).use {
+            block(it)
+        }
     }
 }

@@ -18,6 +18,7 @@ package com.google.api.grpc.kapt.generator
 
 import com.google.api.grpc.kapt.GrpcClient
 import com.google.api.grpc.kapt.GrpcServer
+import com.google.api.grpc.kapt.generator.proto.ProtoInterfaceGenerator
 import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.FileSpec
 import com.squareup.kotlinpoet.FunSpec
@@ -51,9 +52,13 @@ import javax.lang.model.element.Element
  * Generates a gRPC [io.grpc.BindableService] from an interface annotated with [GrpcServer].
  */
 internal class ServerGenerator(
-    override val environment: ProcessingEnvironment,
+    environment: ProcessingEnvironment,
     private val clientElements: Collection<Element>
-) : Generator<List<FileSpec>> {
+) : Generator<List<FileSpec>>(environment) {
+    private val protoGenerator by lazy {
+        ProtoInterfaceGenerator(environment)
+    }
+
     override fun generate(element: Element): List<FileSpec> {
         val files = mutableListOf<FileSpec>()
 
@@ -64,7 +69,7 @@ internal class ServerGenerator(
 
         // get metadata required for generation
         val kmetadata = element.asKotlinMetadata()
-        val typeInfo = annotation.extractTypeInfo(element, environment, annotation.suffix)
+        val typeInfo = annotation.extractTypeInfo(element, annotation.suffix)
 
         // determine marshaller to use
         val marshallerType = annotation.asMarshallerType()
@@ -107,10 +112,10 @@ internal class ServerGenerator(
                     .returns(Server::class)
                     .addStatement(
                         """
-                    |return %T.forPort(port)
-                    |    .addService(this.asGrpcService(coroutineScope))
-                    |    .build()
-                    """.trimMargin(),
+                        |return %T.forPort(port)
+                        |    .addService(this.asGrpcService(coroutineScope))
+                        |    .build()
+                        """.trimMargin(),
                         ServerBuilder::class
                     )
                     .addKdoc(
@@ -424,11 +429,16 @@ internal class ServerGenerator(
             }
             val clientAnnotation = clientInterface?.getAnnotation(GrpcClient::class.java)
             if (clientAnnotation != null) {
-                return clientAnnotation.extractTypeInfo(clientInterface, environment, "")
+                return clientAnnotation.extractTypeInfo(clientInterface, "")
             }
         }
         return null
     }
+
+    private fun GrpcClient.extractTypeInfo(
+        element: Element,
+        suffix: String
+    ): AnnotatedTypeInfo = extractTypeInfo(element, suffix, listOf(protoGenerator))
 }
 
 // various type aliases and help functions to simplify the generated code

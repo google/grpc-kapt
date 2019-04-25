@@ -45,11 +45,65 @@ import javax.lang.model.type.MirroredTypeException
 import javax.tools.Diagnostic
 
 /** A generator component running in the annotation processor's [environment]. */
-internal interface Generator<T> {
+internal abstract class Generator<T>(
     val environment: ProcessingEnvironment
-
+) {
     /** Generate the component for the given [element]. */
-    fun generate(element: Element): T
+    abstract fun generate(element: Element): T
+
+    /** Extract the type info from the annotation, using values from the [element] as needed. */
+    protected fun GrpcClient.extractTypeInfo(
+        element: Element,
+        suffix: String,
+        providers: List<GeneratedInterfaceProvider>
+    ): AnnotatedTypeInfo =
+        extractTypeInfo(element, name, packageName, definedBy, suffix, providers)
+
+    /** Extract the type info from the annotation, using values from the [element] as needed. */
+    protected fun GrpcServer.extractTypeInfo(
+        element: Element,
+        suffix: String
+    ): AnnotatedTypeInfo =
+        extractTypeInfo(element, name, packageName, "", suffix)
+
+    private fun extractTypeInfo(
+        element: Element,
+        nameFromAnnotation: String,
+        packageNameFromAnnotation: String,
+        definedByFromAnnotation: String,
+        suffix: String,
+        providers: List<GeneratedInterfaceProvider> = listOf()
+    ): AnnotatedTypeInfo {
+        // determine appropriate names to use for the service
+        val simpleServiceName = if (nameFromAnnotation.isNotBlank()) {
+            nameFromAnnotation
+        } else {
+            element.asGeneratedInterfaceName()
+        }
+        val typeName = if (packageNameFromAnnotation.isNotBlank()) {
+            ClassName(packageNameFromAnnotation, simpleServiceName + suffix)
+        } else {
+            ClassName(
+                environment.elementUtils.getPackageOf(element).qualifiedName.toString(),
+                simpleServiceName + suffix
+            )
+        }
+        val qualifiedServiceName = if (packageNameFromAnnotation.isNotBlank()) {
+            "$packageNameFromAnnotation.$simpleServiceName"
+        } else if (definedByFromAnnotation.isNotBlank()) {
+            val provider = providers.firstOrNull { it.isDefinedBy(definedByFromAnnotation) }
+            provider?.findFullyQualifiedServiceName(definedByFromAnnotation)
+                ?: throw CodeGenerationException("No suitable generator found for definedBy='$definedByFromAnnotation'")
+        } else {
+            environment.elementUtils.getPackageOf(element).qualifiedName.toString() + "." + simpleServiceName
+        }
+
+        return AnnotatedTypeInfo(
+            simpleName = simpleServiceName,
+            fullName = qualifiedServiceName,
+            type = typeName
+        )
+    }
 
     companion object {
         var DEFAULT_MARSHALLER: TypeName = FallbackMarshallerProvider::class.asTypeName()
@@ -57,14 +111,46 @@ internal interface Generator<T> {
 }
 
 /**
- * Used for a client/server interface [type] that is auto-generated (instead of written by the user).
+ * Used for a client/server interface type that is auto-generated (instead of written by the user).
  *
  * The associated [methodInfo] contains whatever additional metadata the client/server generators requires
- * that is not contained in the interface [type]. The map contains an entry for each function in the [type].
+ * that is not contained in the interface named [typeName].
+ *
+ * The map must contain an entry for each function in the type named by [typeName].
+ *
+ * The [typeName] must be in the [types] list along with any other supplemental generated types.
  */
-internal data class GeneratedInterface(val type: TypeSpec, val methodInfo: Map<FunSpec, KotlinMethodInfo>) {
+internal data class GeneratedInterface(
+    val typeName: String,
+    val methodInfo: Map<FunSpec, KotlinMethodInfo> = mapOf(),
+    val simpleTypeName: String? = null,
+    val types: List<TypeSpec> = listOf()
+) {
     fun asMethods(): List<KotlinMethodInfo> = methodInfo.values.toList()
 }
+
+/** Interface for generators that produce the @GrpcClient interface definition. */
+internal interface GeneratedInterfaceProvider {
+    /**
+     * Tests if this generator is relevant for the value given in [GrpcClient.definedBy].
+     */
+    fun isDefinedBy(value: String): Boolean
+
+    /**
+     * Find the fully qualified name of the service.
+     *
+     * The [value] corresponds to the value provided in [GrpcClient.definedBy].
+     */
+    fun findFullyQualifiedServiceName(value: String): String
+}
+
+/**
+ * Type information about a generated gRPC client/server.
+ *
+ * The [simpleName] is the same as the [type] without any suffix.
+ * The [fullName] is used for the gRPC service name.
+ */
+internal data class AnnotatedTypeInfo(val simpleName: String, val fullName: String, val type: ClassName)
 
 /** Generic exception for [Generator] components to throw. */
 internal class CodeGenerationException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
@@ -98,64 +184,6 @@ private fun TypeName.asMarshallerClass() = if (Unit::class.asTypeName() == this)
     Generator.DEFAULT_MARSHALLER
 } else {
     this
-}
-
-/**
- * Type information about a generated gRPC client/server.
- *
- * The [simpleName] is the same as the [type] without any suffix.
- * The [fullName] is used for the gRPC service name (unless overriden by the [RpcInfo.packageName].
- */
-internal data class AnnotatedTypeInfo(val simpleName: String, val fullName: String, val type: ClassName)
-
-/** Extract the type info from the annotation, using values from the [element] as needed. */
-internal fun GrpcClient.extractTypeInfo(
-    element: Element,
-    environment: ProcessingEnvironment,
-    suffix: String
-): AnnotatedTypeInfo =
-    extractTypeInfo(element, name, packageName, environment, suffix)
-
-/** Extract the type info from the annotation, using values from the [element] as needed. */
-internal fun GrpcServer.extractTypeInfo(
-    element: Element,
-    environment: ProcessingEnvironment,
-    suffix: String
-): AnnotatedTypeInfo =
-    extractTypeInfo(element, name, packageName, environment, suffix)
-
-private fun extractTypeInfo(
-    element: Element,
-    nameFromAnnotation: String,
-    packageNameFromAnnotation: String,
-    environment: ProcessingEnvironment,
-    suffix: String
-): AnnotatedTypeInfo {
-    // determine appropriate names to use for the service
-    val simpleServiceName = if (nameFromAnnotation.isNotBlank()) {
-        nameFromAnnotation
-    } else {
-        element.asGeneratedInterfaceName()
-    }
-    val typeName = if (packageNameFromAnnotation.isNotBlank()) {
-        ClassName(packageNameFromAnnotation, simpleServiceName + suffix)
-    } else {
-        ClassName(
-            environment.elementUtils.getPackageOf(element).qualifiedName.toString(),
-            simpleServiceName + suffix
-        )
-    }
-    val qualifiedServiceName = if (packageNameFromAnnotation.isNotBlank()) {
-        "$packageNameFromAnnotation.$simpleServiceName"
-    } else {
-        environment.elementUtils.getPackageOf(element).qualifiedName.toString() + "." + simpleServiceName
-    }
-
-    return AnnotatedTypeInfo(
-        simpleName = simpleServiceName,
-        fullName = qualifiedServiceName,
-        type = typeName
-    )
 }
 
 /**
@@ -203,7 +231,6 @@ internal data class KotlinMethodInfo(
 /** Info about the RPC associated with a method. */
 internal data class RpcInfo(
     val name: String,
-    val packageName: String?,
     val type: MethodDescriptor.MethodType,
     val inputType: TypeName,
     val outputType: TypeName
@@ -277,7 +304,6 @@ internal fun KotlinClassMetadata.Class.describeElement(
         returns = returns,
         rpc = RpcInfo(
             name = funName.capitalize(),
-            packageName = null,
             type = methodType,
             inputType = when (methodType) {
                 MethodDescriptor.MethodType.CLIENT_STREAMING -> inputType.extractStreamType()
@@ -336,8 +362,8 @@ internal fun TypeName.isRawType(type: TypeName): Boolean {
     return rawType == type
 }
 
-// extracts the type that should be used for the rpc (first type argument)
-private fun TypeName.extractStreamType(): TypeName {
+/** Extracts the type that should be used for the rpc (first type argument) */
+internal fun TypeName.extractStreamType(): TypeName {
     val t = this as? ParameterizedTypeName ?: throw CodeGenerationException("Invalid type for streaming method: $this.")
 
     if (t.typeArguments.size != 1) {

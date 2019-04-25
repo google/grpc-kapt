@@ -28,7 +28,8 @@ dependencies {
     compile(project(":processor-utils"))
 
     compile(project(":example"))
-    compile(project(":example-with-streams"))
+    compile(project(":example-with-json"))
+    compile(project(":example-with-proto"))
     compile(project(":example-with-google-api"))
 }
 
@@ -84,13 +85,19 @@ subprojects {
 }
 
 tasks {
+    fun Task.subTargets(project: String, targets: List<String> = listOf("clean", "run")) =
+        targets.map { getByPath("$project:$it") }
+
     val runExample by registering {
-        dependsOn(getByPath(":example:run"))
+        dependsOn(subTargets(":example"))
     }
-    val runExampleWithStreams by registering {
-        dependsOn(getByPath(":example-with-streams:run"))
+    val runExampleWithJson by registering {
+        dependsOn(subTargets(":example-with-json"))
+    }
+    val runExampleWithProto by registering {
+        dependsOn(subTargets(":example-with-proto"))
     }
     val runExampleWithGoogle by registering {
-        dependsOn(getByPath(":example-with-google-api:run"))
+        dependsOn(subTargets(":example-with-google-api"))
     }
 }

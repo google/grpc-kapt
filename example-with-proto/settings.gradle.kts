@@ -15,4 +15,4 @@
  */
 
 
-rootProject.name = "example-with-streams"
+rootProject.name = "example-with-proto"

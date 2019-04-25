@@ -22,17 +22,18 @@ import com.google.api.grpc.kapt.GrpcClient
 import com.google.api.grpc.kapt.generator.ClientGenerator
 import com.google.api.grpc.kapt.generator.CodeGenerationException
 import com.google.api.grpc.kapt.generator.GeneratedInterface
+import com.google.api.grpc.kapt.generator.GeneratedInterfaceProvider
 import com.google.api.grpc.kapt.generator.Generator
 import com.google.api.grpc.kapt.generator.KotlinMethodInfo
 import com.google.api.grpc.kapt.generator.ParameterInfo
 import com.google.api.grpc.kapt.generator.RpcInfo
 import com.google.protobuf.DescriptorProtos
-import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.FunSpec
 import com.squareup.kotlinpoet.KModifier
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import com.squareup.kotlinpoet.TypeName
 import com.squareup.kotlinpoet.TypeSpec
+import com.squareup.kotlinpoet.TypeVariableName
 import com.squareup.kotlinpoet.asTypeName
 import io.grpc.MethodDescriptor
 import kotlinx.coroutines.channels.ReceiveChannel
@@ -47,8 +48,8 @@ internal const val KAPT_PROTO_DESCRIPTOR_OPTION_NAME = "protos"
  * by the other code generators.
  */
 internal class ProtoInterfaceGenerator(
-    override val environment: ProcessingEnvironment
-) : Generator<GeneratedInterface> {
+    environment: ProcessingEnvironment
+) : Generator<GeneratedInterface>(environment), GeneratedInterfaceProvider {
 
     // read the descriptor from the kapt options
     private val descriptor: DescriptorProtos.FileDescriptorSet by lazy {
@@ -69,7 +70,7 @@ internal class ProtoInterfaceGenerator(
             ?: throw CodeGenerationException("expected @GrpcClient element")
 
         // find the service
-        val serviceInfo = findService(annotation.definedBy)
+        val serviceInfo = findServiceOrNull(annotation.definedBy)
             ?: throw CodeGenerationException("service defined by '${annotation.definedBy}' was not found in the descriptor set.")
         val file = serviceInfo.file
         val service = serviceInfo.service
@@ -77,11 +78,11 @@ internal class ProtoInterfaceGenerator(
         // create the interface type
         val typeBuilder = TypeSpec.interfaceBuilder(service.name)
             .addSuperinterface(element.asType().asTypeName())
-            .addSuperinterface(AutoCloseable::class)
-            .addProperties(ClientGenerator.COMMON_INTERFACE_PROPERTIES)
-            .addType(TypeSpec.companionObjectBuilder()
-                .addFunctions(ClientGenerator.createChannelBuilders(ClassName("", service.name)))
-                .build())
+            .addType(
+                TypeSpec.companionObjectBuilder()
+                    .addFunctions(ClientGenerator.createChannelBuilders("${service.name}Ext", service.name))
+                    .build()
+            )
         val funMap = mutableMapOf<FunSpec, KotlinMethodInfo>()
 
         // add all the functions
@@ -91,15 +92,28 @@ internal class ProtoInterfaceGenerator(
             funMap[func] = metadata
         }
 
-        return GeneratedInterface(typeBuilder.build(), funMap)
+        val extendedTypeBuilder = TypeSpec.interfaceBuilder("${service.name}Ext")
+            .addSuperinterface(TypeVariableName(service.name))
+            // .addSuperinterface(ClassName("", service.name))
+            .addSuperinterface(AutoCloseable::class)
+            .addProperties(ClientGenerator.COMMON_INTERFACE_PROPERTIES)
+
+        return GeneratedInterface(
+            typeName = "${service.name}Ext",
+            simpleTypeName = service.name,
+            methodInfo = funMap,
+            types = listOf(typeBuilder.build(), extendedTypeBuilder.build())
+        )
     }
 
-    private data class ServiceInfo(
+    data class ServiceInfo(
         val file: DescriptorProtos.FileDescriptorProto,
         val service: DescriptorProtos.ServiceDescriptorProto
-    )
+    ) {
+        fun asFullyQualifiedServiceName() = "${file.`package`}.${service.name}"
+    }
 
-    private fun findService(name: String): ServiceInfo? {
+    private fun findServiceOrNull(name: String): ServiceInfo? {
         for (file in descriptor.fileList) {
             val service = file.serviceList.firstOrNull { "${file.`package`}.${it.name}" == name }
             if (service != null) {
@@ -108,6 +122,12 @@ internal class ProtoInterfaceGenerator(
         }
         return null
     }
+
+    override fun isDefinedBy(value: String): Boolean = value.isNotBlank()
+
+    override fun findFullyQualifiedServiceName(name: String): String =
+        this.findServiceOrNull(name)?.asFullyQualifiedServiceName()
+            ?: throw CodeGenerationException("no service found with name: '$name'")
 }
 
 private fun DescriptorProtos.MethodDescriptorProto.asClientMethod(
@@ -115,14 +135,14 @@ private fun DescriptorProtos.MethodDescriptorProto.asClientMethod(
     file: DescriptorProtos.FileDescriptorProto,
     service: DescriptorProtos.ServiceDescriptorProto
 ): Pair<FunSpec, KotlinMethodInfo> {
-    val outputType = getKotlinOutputType(typeMapper)
-    val inputType = getKotlinInputType(typeMapper)
+    val kotlinOutputType = getKotlinOutputType(typeMapper)
+    val kotlinInputType = getKotlinInputType(typeMapper)
 
     val requestVar = "request"
     val builder = FunSpec.builder(name.decapitalize())
         .addModifiers(KModifier.SUSPEND, KModifier.ABSTRACT)
-        .returns(outputType)
-        .addParameter(requestVar, inputType)
+        .returns(kotlinOutputType)
+        .addParameter(requestVar, kotlinInputType)
 
     val comments = file.getMethodComments(service, this) ?: ""
     if (comments.isNotBlank()) {
@@ -132,19 +152,18 @@ private fun DescriptorProtos.MethodDescriptorProto.asClientMethod(
     val methodInfo = KotlinMethodInfo(
         name = name.decapitalize(),
         isSuspend = true,
-        parameters = listOf(ParameterInfo(requestVar, inputType)),
-        returns = outputType,
+        parameters = listOf(ParameterInfo(requestVar, kotlinInputType)),
+        returns = kotlinOutputType,
         rpc = RpcInfo(
             name = name,
-            packageName = "${file.`package`}.${service.name}",
             type = when {
                 serverStreaming && clientStreaming -> MethodDescriptor.MethodType.BIDI_STREAMING
                 serverStreaming -> MethodDescriptor.MethodType.SERVER_STREAMING
                 clientStreaming -> MethodDescriptor.MethodType.CLIENT_STREAMING
                 else -> MethodDescriptor.MethodType.UNARY
             },
-            inputType = inputType,
-            outputType = outputType
+            inputType = typeMapper.getKotlinType(inputType),
+            outputType = typeMapper.getKotlinType(outputType)
         )
     )
 

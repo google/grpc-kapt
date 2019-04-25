@@ -33,7 +33,7 @@ import kotlin.coroutines.coroutineContext
 private const val PORT = 8080
 
 /**
- * Run a gRPC client & server defined by the [ComplexService] interface.
+ * Run a gRPC client & server defined by the [ComplexService] interface using JSON.
  *
  * This example is a more complex example that showcases gRPC
  * streaming methods and using a custom data marshaller.
