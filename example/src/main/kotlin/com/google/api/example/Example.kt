@@ -35,8 +35,8 @@ fun main() = runBlocking {
         // create a client with a new channel and call the server
         SimpleServiceClient.forAddress("localhost", PORT, channelOptions = {
             usePlaintext()
-        }).use {
-            val answer = it.ask(Question("what's this?"))
+        }).use { client ->
+            val answer = client.ask(Question("what's this?"))
             println(answer)
         }
     }

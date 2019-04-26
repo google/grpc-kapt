@@ -41,8 +41,8 @@ fun main(): Unit = runBlocking {
             )
         )
 
-    LanguageService.forAddress("language.googleapis.com", 443, callOptions = options).use {
-        val response = it.analyzeEntities(with(AnalyzeEntitiesRequest.newBuilder()) {
+    LanguageService.forAddress("language.googleapis.com", 443, callOptions = options).use { client ->
+        val response = client.analyzeEntities(with(AnalyzeEntitiesRequest.newBuilder()) {
             document = with(Document.newBuilder()) {
                 content = "Hi there Joe!"
                 type = Document.Type.PLAIN_TEXT
