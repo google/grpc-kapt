@@ -42,7 +42,11 @@ private const val PORT = 8080
  * For a simple example, see the example directory in the root of this project.
  */
 fun main(): Unit = runBlocking {
+    // create the server
     ProtoServer().asGrpcServer(PORT) {
+        println("Server started on port: $PORT\n")
+
+        // create a client with a new channel and call the server
         ProtoService.forAddress("localhost", PORT, channelOptions = { usePlaintext() }).use { client ->
             // unary call
             println(client.ask(question { query = "what's this?" }))
@@ -68,6 +72,7 @@ fun main(): Unit = runBlocking {
             }
         }
     }
+    println("Server terminated.")
 }
 
 // generate a gRPC client

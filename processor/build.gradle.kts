@@ -27,7 +27,7 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.1.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.1.1")
-    
+
     implementation(project(":processor-annotations"))
     implementation("io.grpc:grpc-stub:1.20.0")
     implementation("io.grpc:grpc-protobuf:1.20.0")
@@ -37,4 +37,6 @@ dependencies {
     testImplementation(kotlin("test"))
     testImplementation(kotlin("test-junit"))
     testImplementation("junit:junit:4.12")
+    testCompile("org.permissionsdispatcher:kompile-testing:0.1.2")
+    testCompile(files(org.gradle.internal.jvm.Jvm.current().toolsJar))
 }

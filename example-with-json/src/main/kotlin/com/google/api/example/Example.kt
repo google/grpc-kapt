@@ -51,13 +51,11 @@ fun main() = runBlocking {
         }).use { client ->
             // unary call
             println(client.ask(Question("what's this?")))
-            println()
 
             // server streaming
             for (answer in client.lecture(Question("my favorite topic"))) {
                 println(answer)
             }
-            println()
 
             // client streaming
             println(client.listen(produce {
@@ -65,16 +63,14 @@ fun main() = runBlocking {
                     send(Question("I" + " still".repeat(i) + " have a question [#${i + 1}]"))
                 }
             }))
-            println()
 
             // bidirectional streaming
             val answers = client.debate(produce {
-                repeat(10) { i -> send(Question("[#${i + 1}]")) }
+                repeat(10) { i -> send(Question("Question #${i + 1}")) }
             })
             for (answer in answers) {
                 println(answer)
             }
-            println()
         }
     }
     println("Server terminated.")
@@ -98,7 +94,7 @@ interface ComplexService {
 @GrpcServer
 class ComplexServer : ComplexService {
 
-    override suspend fun ask(question: Question) = Answer(result = "you said: '${question.query}'")
+    override suspend fun ask(question: Question) = Answer("you said: '${question.query}'")
 
     override suspend fun lecture(topic: Question) = CoroutineScope(coroutineContext).produce {
         send(Answer("let's talk about '${topic.query}'"))
