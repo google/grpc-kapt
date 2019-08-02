@@ -16,16 +16,5 @@
 
 package com.google.api.grpc.kapt.generator
 
-import com.google.api.grpc.kapt.kaptTestFail
-import kotlin.test.Test
-
-class GeneratorTest {
-
-    @Test
-    fun `can not use @GrpcClient on a class element`() = kaptTestFail(
-        input = listOf(
-            "foo.kt" to "@com.google.api.grpc.kapt.GrpcClient class TestClass"
-        ),
-        message = "@GrpcClient can only be applied to interfaces."
-    )
-}
+// TODO
+class ClientGeneratorTest

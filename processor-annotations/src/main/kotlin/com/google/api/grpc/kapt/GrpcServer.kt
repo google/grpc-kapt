@@ -47,7 +47,7 @@ import kotlin.reflect.KClass
  *     // client streaming
  *     suspend fun listen(questions: ReceiveChannel<Question>): Answer
  *
- *     // bidirectional streming
+ *     // bidirectional streaming
  *     suspend fun debate(questions: ReceiveChannel<Question>): ReceiveChannel<Answer>
  * }
  *

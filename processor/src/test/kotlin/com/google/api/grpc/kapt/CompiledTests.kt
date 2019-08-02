@@ -20,7 +20,7 @@ import kompile.testing.kotlinc
 
 typealias KotlinSource = Pair<String, String>
 
-fun kaptTest(input: List<KotlinSource>, output: List<KotlinSource>): Unit {
+fun kaptTest(input: List<KotlinSource>, output: List<KotlinSource> = listOf()) {
     val compiler = kotlinc()
         .withProcessors(GrpcProcessor())
 
@@ -31,12 +31,12 @@ fun kaptTest(input: List<KotlinSource>, output: List<KotlinSource>): Unit {
     val result = compiler.compile()
         .succeededWithoutWarnings()
 
-    for((name, content) in output) {
+    for ((name, content) in output) {
         result.generatedFile(name).hasSourceEquivalentTo(content)
     }
 }
 
-fun kaptTestFail(input: List<KotlinSource>, message: String): Unit {
+fun kaptTestFail(input: List<KotlinSource>, message: String) {
     val compiler = kotlinc()
         .withProcessors(GrpcProcessor())
 

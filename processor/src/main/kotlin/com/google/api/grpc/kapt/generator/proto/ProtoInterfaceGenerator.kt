@@ -27,21 +27,32 @@ import com.google.api.grpc.kapt.generator.Generator
 import com.google.api.grpc.kapt.generator.KotlinMethodInfo
 import com.google.api.grpc.kapt.generator.ParameterInfo
 import com.google.api.grpc.kapt.generator.RpcInfo
+import com.google.api.grpc.kapt.generator.SchemaDescriptorProvider
 import com.google.protobuf.DescriptorProtos
+import com.google.protobuf.Descriptors
+import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.FunSpec
 import com.squareup.kotlinpoet.KModifier
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
+import com.squareup.kotlinpoet.PropertySpec
 import com.squareup.kotlinpoet.TypeName
 import com.squareup.kotlinpoet.TypeSpec
 import com.squareup.kotlinpoet.TypeVariableName
+import com.squareup.kotlinpoet.asClassName
 import com.squareup.kotlinpoet.asTypeName
 import io.grpc.MethodDescriptor
+import io.grpc.protobuf.ProtoFileDescriptorSupplier
+import io.grpc.protobuf.ProtoMethodDescriptorSupplier
+import io.grpc.protobuf.ProtoServiceDescriptorSupplier
 import kotlinx.coroutines.channels.ReceiveChannel
 import java.io.File
+import java.util.Base64
 import javax.annotation.processing.ProcessingEnvironment
 import javax.lang.model.element.Element
 
 internal const val KAPT_PROTO_DESCRIPTOR_OPTION_NAME = "protos"
+
+private const val PROPTO_SOURCE_CLASS_NAME = "ProtoSourceSupplier"
 
 /**
  * Generates an interface from a protocol buffer file descriptor that can be consumed
@@ -55,7 +66,7 @@ internal class ProtoInterfaceGenerator(
     private val descriptor: DescriptorProtos.FileDescriptorSet by lazy {
         val descriptorFile = File(
             environment.options[KAPT_PROTO_DESCRIPTOR_OPTION_NAME]
-                ?: throw CodeGenerationException("The protobuf file descriptor set is not available to the annotation processor. Please set the katp '$KAPT_PROTO_DESCRIPTOR_OPTION_NAME' option.")
+                ?: throw CodeGenerationException("The protobuf file descriptor set is not available to the annotation processor. Please set the kapt '$KAPT_PROTO_DESCRIPTOR_OPTION_NAME' option.")
         )
         DescriptorProtos.FileDescriptorSet.parseFrom(descriptorFile.readBytes())
     }
@@ -94,7 +105,6 @@ internal class ProtoInterfaceGenerator(
 
         val extendedTypeBuilder = TypeSpec.interfaceBuilder("${service.name}Ext")
             .addSuperinterface(TypeVariableName(service.name))
-            // .addSuperinterface(ClassName("", service.name))
             .addSuperinterface(AutoCloseable::class)
             .addProperties(ClientGenerator.COMMON_INTERFACE_PROPERTIES)
 
@@ -106,7 +116,7 @@ internal class ProtoInterfaceGenerator(
         )
     }
 
-    data class ServiceInfo(
+    private data class ServiceInfo(
         val file: DescriptorProtos.FileDescriptorProto,
         val service: DescriptorProtos.ServiceDescriptorProto
     ) {
@@ -125,9 +135,87 @@ internal class ProtoInterfaceGenerator(
 
     override fun isDefinedBy(value: String): Boolean = value.isNotBlank()
 
-    override fun findFullyQualifiedServiceName(name: String): String =
-        this.findServiceOrNull(name)?.asFullyQualifiedServiceName()
-            ?: throw CodeGenerationException("no service found with name: '$name'")
+    override fun findFullyQualifiedServiceName(value: String): String =
+        this.findServiceOrNull(value)?.asFullyQualifiedServiceName()
+            ?: throw CodeGenerationException("no service found with name: '$value'")
+
+    override fun getSource(value: String): SchemaDescriptorProvider? {
+        val serviceInfo = findServiceOrNull(value) ?: return null
+
+        return object : SchemaDescriptorProvider {
+            override fun getSchemaDescriptorType(): TypeSpec? {
+                return TypeSpec.classBuilder(PROPTO_SOURCE_CLASS_NAME)
+                    .addModifiers(KModifier.PRIVATE)
+                    .addSuperinterface(ProtoMethodDescriptorSupplier::class.asTypeName())
+                    .addSuperinterface(ProtoFileDescriptorSupplier::class.asTypeName())
+                    .addSuperinterface(ProtoServiceDescriptorSupplier::class.asTypeName())
+                    .addProperty(
+                        PropertySpec.builder("proto", String::class.asClassName())
+                            .initializer(
+                                "%S",
+                                Base64.getEncoder().encodeToString(serviceInfo.file.toByteArray() ?: ByteArray(0))
+                            )
+                            .build()
+                    )
+                    .addProperty(
+                        PropertySpec.builder("methodName", String::class.asTypeName(), KModifier.PRIVATE)
+                            .initializer("methodName").build()
+                    )
+                    .addProperty(
+                        PropertySpec.builder(
+                            "descriptor",
+                            Descriptors.FileDescriptor::class.asTypeName(),
+                            KModifier.PRIVATE
+                        ).build()
+                    )
+                    .primaryConstructor(
+                        FunSpec.constructorBuilder()
+                            .addModifiers(KModifier.INTERNAL)
+                            .addParameter("methodName", String::class.asTypeName())
+                            .build()
+                    )
+                    .addInitializerBlock(
+                        CodeBlock.of(
+                            """
+                            |descriptor = %T.buildFrom(
+                            |    %T.parseFrom(%T.getDecoder().decode(this.proto)),
+                            |    arrayOfNulls(0),
+                            |    true
+                            |)
+                            """.trimMargin(),
+                            Descriptors.FileDescriptor::class.asTypeName(),
+                            DescriptorProtos.FileDescriptorProto::class.asTypeName(),
+                            Base64::class.asTypeName()
+                        )
+                    )
+                    .addFunction(
+                        FunSpec.builder("getMethodDescriptor")
+                            .addModifiers(KModifier.OVERRIDE)
+                            .returns(Descriptors.MethodDescriptor::class.asTypeName())
+                            .addCode("return this.serviceDescriptor.findMethodByName(this.methodName)")
+                            .build()
+                    )
+                    .addFunction(
+                        FunSpec.builder("getFileDescriptor")
+                            .addModifiers(KModifier.OVERRIDE)
+                            .returns(Descriptors.FileDescriptor::class.asTypeName())
+                            .addCode("return this.descriptor")
+                            .build()
+                    )
+                    .addFunction(
+                        FunSpec.builder("getServiceDescriptor")
+                            .addModifiers(KModifier.OVERRIDE)
+                            .returns(Descriptors.ServiceDescriptor::class.asTypeName())
+                            .addCode("return this.fileDescriptor.findServiceByName(%S)", serviceInfo.service.name)
+                            .build()
+                    )
+                    .build()
+            }
+
+            override fun getSchemaDescriptorFor(methodName: String?) =
+                CodeBlock.of("$PROPTO_SOURCE_CLASS_NAME(%S)", methodName ?: "")
+        }
+    }
 }
 
 private fun DescriptorProtos.MethodDescriptorProto.asClientMethod(

@@ -20,6 +20,7 @@ import com.google.api.grpc.kapt.FallbackMarshallerProvider
 import com.google.api.grpc.kapt.GrpcClient
 import com.google.api.grpc.kapt.GrpcServer
 import com.squareup.kotlinpoet.ClassName
+import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.FunSpec
 import com.squareup.kotlinpoet.ParameterizedTypeName
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
@@ -88,10 +89,13 @@ internal abstract class Generator<T>(
                 simpleServiceName + suffix
             )
         }
+
+        // determine name and provider
+        var provider: GeneratedInterfaceProvider? = null
         val qualifiedServiceName = if (packageNameFromAnnotation.isNotBlank()) {
             "$packageNameFromAnnotation.$simpleServiceName"
         } else if (definedByFromAnnotation.isNotBlank()) {
-            val provider = providers.firstOrNull { it.isDefinedBy(definedByFromAnnotation) }
+            provider = providers.firstOrNull { it.isDefinedBy(definedByFromAnnotation) }
             provider?.findFullyQualifiedServiceName(definedByFromAnnotation)
                 ?: throw CodeGenerationException("No suitable generator found for definedBy='$definedByFromAnnotation'")
         } else {
@@ -101,7 +105,8 @@ internal abstract class Generator<T>(
         return AnnotatedTypeInfo(
             simpleName = simpleServiceName,
             fullName = qualifiedServiceName,
-            type = typeName
+            type = typeName,
+            source = provider?.getSource(definedByFromAnnotation)
         )
     }
 
@@ -142,6 +147,14 @@ internal interface GeneratedInterfaceProvider {
      * The [value] corresponds to the value provided in [GrpcClient.definedBy].
      */
     fun findFullyQualifiedServiceName(value: String): String
+
+    fun getSource(value: String): SchemaDescriptorProvider?
+}
+
+/** Interface for generators that produce @GrpcServer's that support reflection */
+internal interface SchemaDescriptorProvider {
+    fun getSchemaDescriptorType(): TypeSpec?
+    fun getSchemaDescriptorFor(methodName: String? = null): CodeBlock?
 }
 
 /**
@@ -149,8 +162,14 @@ internal interface GeneratedInterfaceProvider {
  *
  * The [simpleName] is the same as the [type] without any suffix.
  * The [fullName] is used for the gRPC service name.
+ * The [provider] of the type info (if an external source was used - i.e. proto)
  */
-internal data class AnnotatedTypeInfo(val simpleName: String, val fullName: String, val type: ClassName)
+internal data class AnnotatedTypeInfo(
+    val simpleName: String,
+    val fullName: String,
+    val type: ClassName,
+    val source: SchemaDescriptorProvider?
+)
 
 /** Generic exception for [Generator] components to throw. */
 internal class CodeGenerationException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)

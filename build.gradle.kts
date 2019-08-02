@@ -85,7 +85,7 @@ subprojects {
 }
 
 tasks {
-    fun Task.subTargets(project: String, targets: List<String> = listOf("clean", "run")) =
+    fun subTargets(project: String, targets: List<String> = listOf("clean", "run")) =
         targets.map { getByPath("$project:$it") }
 
     val runExample by registering {
@@ -96,6 +96,9 @@ tasks {
     }
     val runExampleWithProto by registering {
         dependsOn(subTargets(":example-with-proto"))
+    }
+    val runExampleWithProtoReflection by registering {
+        dependsOn(subTargets(":example-with-proto", listOf("clean", "runServer")))
     }
     val runExampleWithGoogle by registering {
         dependsOn(subTargets(":example-with-google-api"))

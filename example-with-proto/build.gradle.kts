@@ -43,7 +43,8 @@ dependencies {
     implementation("io.grpc:grpc-netty-shaded:1.20.0")
     implementation("io.grpc:grpc-stub:1.20.0")
     implementation("io.grpc:grpc-protobuf:1.20.0")
-    
+    implementation("io.grpc:grpc-services:1.20.0")
+
     testImplementation(kotlin("test"))
     testImplementation(kotlin("test-junit"))
     testImplementation("junit:junit:4.12")
@@ -68,5 +69,12 @@ protobuf {
             it.generateDescriptorSet = true
             it.descriptorSetOptions.includeSourceInfo = true
         }
+    }
+}
+
+tasks {
+    val runServer by registering(JavaExec::class) {
+        main = "com.google.api.example.ExampleReflectionKt"
+        classpath = sourceSets["main"].runtimeClasspath
     }
 }

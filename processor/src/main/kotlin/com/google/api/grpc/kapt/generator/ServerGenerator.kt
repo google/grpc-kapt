@@ -77,6 +77,7 @@ internal class ServerGenerator(
         // determine the full service name (use the implemented interfaces, if available)
         val clientInterfaceTypeInfo = getClientAnnotation(element)
         val fullServiceName = clientInterfaceTypeInfo?.fullName ?: typeInfo.fullName
+        val provider = clientInterfaceTypeInfo?.source ?: typeInfo.source
 
         // create the server
         val server = FileSpec.builder(typeInfo.type.packageName, typeInfo.type.simpleName)
@@ -190,9 +191,9 @@ internal class ServerGenerator(
                     .addProperty(
                         element.filterRpcMethods().map {
                             kmetadata.describeElement(it)
-                        }.asMethodDescriptor(marshallerType)
+                        }.asMethodDescriptor(marshallerType, provider)
                     )
-                    .addProperty(generateServiceDescriptor())
+                    .addProperty(generateServiceDescriptor(provider))
                     .addProperty(generateServiceDefinition())
                     .addFunction(
                         FunSpec.builder("bindService")
@@ -205,14 +206,22 @@ internal class ServerGenerator(
             )
             .addImport("kotlinx.coroutines", "launch", "runBlocking")
             .addImport("kotlinx.coroutines", "coroutineScope")
-            .build()
-        files += server
+
+        val schemaDescriptorType = provider?.getSchemaDescriptorType()
+        if (schemaDescriptorType != null) {
+            server.addType(schemaDescriptorType)
+        }
+
+        files += server.build()
 
         return files
     }
 
-    private fun List<KotlinMethodInfo>.asMethodDescriptor(marshallerType: TypeName): PropertySpec {
-        val methodsInitializers = this.map { it.asMethodDescriptor(marshallerType) }
+    private fun List<KotlinMethodInfo>.asMethodDescriptor(
+        marshallerType: TypeName,
+        provider: SchemaDescriptorProvider?
+    ): PropertySpec {
+        val methodsInitializers = this.map { it.asMethodDescriptor(marshallerType, provider) }
 
         return PropertySpec.builder("methods", methodListTypeAlias.type)
             .addModifiers(KModifier.PRIVATE)
@@ -233,7 +242,10 @@ internal class ServerGenerator(
             .build()
     }
 
-    private fun KotlinMethodInfo.asMethodDescriptor(marshallerType: TypeName): CodeBlock {
+    private fun KotlinMethodInfo.asMethodDescriptor(
+        marshallerType: TypeName,
+        provider: SchemaDescriptorProvider?
+    ): CodeBlock {
         val serverCall = with(CodeBlock.builder()) {
             indent()
             if (rpc.type == MethodDescriptor.MethodType.SERVER_STREAMING) {
@@ -368,6 +380,7 @@ internal class ServerGenerator(
             |            MethodDescriptor.generateFullMethodName(name, %S)
             |        )
             |        setType(MethodDescriptor.MethodType.%L)
+            |        setSchemaDescriptor(%L)
             |        build()
             |    },
             |    %L
@@ -378,11 +391,12 @@ internal class ServerGenerator(
             marshallerType, rpc.outputType,
             rpc.name,
             rpc.type.name,
+            provider?.getSchemaDescriptorFor(rpc.name) ?: "null",
             serverCall
         )
     }
 
-    private fun generateServiceDescriptor() =
+    private fun generateServiceDescriptor(provider: SchemaDescriptorProvider?) =
         PropertySpec.builder("serviceDescriptor", ServiceDescriptor::class.asTypeName())
             .addModifiers(KModifier.PRIVATE)
             .initializer(
@@ -393,10 +407,12 @@ internal class ServerGenerator(
                 |    for ((method, _) in methods) {
                 |        addMethod(method)
                 |    }
+                |    setSchemaDescriptor(%L)
                 |    build()
                 |}
                 |""".trimMargin(),
-                ServiceDescriptor::class.asTypeName()
+                ServiceDescriptor::class.asTypeName(),
+                provider?.getSchemaDescriptorFor() ?: "null"
             )
             .build()
 
