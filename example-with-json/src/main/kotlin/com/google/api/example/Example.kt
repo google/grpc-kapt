@@ -23,6 +23,7 @@ import com.google.api.grpc.kapt.GrpcMarshaller
 import com.google.api.grpc.kapt.GrpcServer
 import io.grpc.MethodDescriptor
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.runBlocking
@@ -40,6 +41,7 @@ private const val PORT = 8080
  *
  * For a simple example, see the example directory in the root of this project.
  */
+@ExperimentalCoroutinesApi
 fun main() = runBlocking {
     // create the server
     ComplexServer().asGrpcServer(PORT) {
@@ -92,6 +94,7 @@ interface ComplexService {
 
 // generate a gRPC service
 @GrpcServer
+@ExperimentalCoroutinesApi
 class ComplexServer : ComplexService {
 
     override suspend fun ask(question: Question) = Answer("you said: '${question.query}'")

@@ -17,6 +17,7 @@
 package com.google.api.example
 
 import io.grpc.ManagedChannelBuilder
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.channels.toList
@@ -27,6 +28,7 @@ import kotlin.test.assertEquals
 
 private const val PORT = 8484
 
+@ExperimentalCoroutinesApi
 class ExampleTest {
 
     companion object {

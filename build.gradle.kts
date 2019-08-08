@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import org.gradle.api.tasks.testing.logging.TestLogEvent
+
 plugins {
     idea
     maven
@@ -79,6 +81,12 @@ subprojects {
                 main = "com.github.shyiko.ktlint.Main"
                 classpath = ktlintImplementation
                 args = listOf("-F", "src/**/*.kt", "test/**/*.kt")
+            }
+
+            withType<Test> {
+                testLogging {
+                    events = setOf(TestLogEvent.PASSED, TestLogEvent.SKIPPED, TestLogEvent.FAILED)
+                }
             }
         }
     }

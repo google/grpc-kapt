@@ -31,14 +31,14 @@ defaultTasks = listOf("run")
 dependencies {
     implementation(kotlin("stdlib-jdk8"))
 
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.1.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.1.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.2.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.2.2")
 
     implementation("io.grpc:grpc-netty-shaded:1.20.0")
     implementation("io.grpc:grpc-stub:1.20.0")
 
     // example for marshalling with jackson instead of gson or protobuf
-    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.9.7")
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.9.9")
 
     testImplementation(kotlin("test"))
     testImplementation(kotlin("test-junit"))

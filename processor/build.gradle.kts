@@ -25,14 +25,14 @@ dependencies {
     implementation(kotlin("stdlib-jdk8"))
     implementation("org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.0.5")
 
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.1.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.1.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.2.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.2.2")
 
     implementation(project(":processor-annotations"))
     implementation("io.grpc:grpc-stub:1.20.0")
     implementation("io.grpc:grpc-protobuf:1.20.0")
 
-    implementation("com.squareup:kotlinpoet:1.2.0")
+    implementation("com.squareup:kotlinpoet:1.3.0")
 
     testImplementation(kotlin("test"))
     testImplementation(kotlin("test-junit"))

@@ -25,6 +25,7 @@ import com.google.protobuf.Message
 import io.grpc.MethodDescriptor
 import io.grpc.protobuf.ProtoUtils
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.runBlocking
@@ -41,6 +42,7 @@ private const val PORT = 8080
  *
  * For a simple example, see the example directory in the root of this project.
  */
+@ExperimentalCoroutinesApi
 fun main(): Unit = runBlocking {
     // create the server
     ProtoServer().asGrpcServer(PORT) {
@@ -80,25 +82,26 @@ fun main(): Unit = runBlocking {
 interface MyProtoService
 
 @GrpcServer
+@ExperimentalCoroutinesApi
 class ProtoServer : ProtoService, MyProtoService {
-    override suspend fun ask(question: Question) = answer { result = "you said: '${question.query}'" }
+    override suspend fun ask(request: Question) = answer { result = "you said: '${request.query}'" }
 
-    override suspend fun lecture(topic: Question) = CoroutineScope(coroutineContext).produce {
-        send(answer { result = "let's talk about '${topic.query}'" })
+    override suspend fun lecture(request: Question) = CoroutineScope(coroutineContext).produce {
+        send(answer { result = "let's talk about '${request.query}'" })
         repeat(10) { i ->
             send(answer { result = Array(i + 1) { "more" }.joinToString(" and ") + "[${i + 1}]" })
         }
     }
 
-    override suspend fun listen(questions: ReceiveChannel<Question>): Answer {
-        for (question in questions) {
+    override suspend fun listen(request: ReceiveChannel<Question>): Answer {
+        for (question in request) {
             println("You asked: '${question.query}'")
         }
         return answer { result = "Great questions everyone!" }
     }
 
-    override suspend fun debate(questions: ReceiveChannel<Question>) = CoroutineScope(coroutineContext).produce {
-        for (question in questions) {
+    override suspend fun debate(request: ReceiveChannel<Question>) = CoroutineScope(coroutineContext).produce {
+        for (question in request) {
             send(answer { result = "${question.query}? Sorry, I don't know..." })
         }
     }
