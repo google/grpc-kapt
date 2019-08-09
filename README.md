@@ -1,5 +1,7 @@
 # gRPC-kapt
 
+[![CircleCI](https://circleci.com/gh/google/grpc-kapt.svg?style=svg)](https://circleci.com/gh/google/grpc-kapt)
+
 A Kotlin [kapt](https://kotlinlang.org/docs/reference/kapt.html) annotation processor for using
 [gRPC](https://grpc.io/) with the transport of your choice (json, proto, etc.).
 
@@ -16,24 +18,46 @@ To implement a server, create another class that inherits from your `@GrpcClient
 annotate it with `@GrpcServer`, and implement the server-side logic for the methods 
 that you have defined on the client.
 
-In both cases, you should also add at least one object in your application with the `@GrpcMarshaller`
-annotation. The example below uses Jackson for JSON serialization, but you may use
-any framework that you like (Jackson, GSON, proto, etc.). For example, see the 
-[proto-based example](example-with-proto).
+```kotlin
+fun main() = runBlocking {
+    // create the server (use .asGrpcService() to create long running servers)
+    SimpleServer().asGrpcServer(8080) {
+        // create a client and query the server
+        SimpleServiceClient.forAddress("localhost", 8080, channelOptions = { usePlaintext() }).use { client ->
+            val answer = client.ask(Question("what's this?"))
+            println(answer)
+        }
+    }
+}
+
+// define the data types
+data class Question(val query: String)
+data class Answer(val result: String)
+
+// generate a gRPC client
+@GrpcClient
+interface SimpleService {
+    suspend fun ask(question: Question): Answer
+}
+
+// generate a gRPC service
+@GrpcServer
+class SimpleServer : SimpleService {
+    override suspend fun ask(question: Question) = Answer(result = "you said: '${question.query}'")
+}
+```
+
+In most cases, you should also add at least one object in your application with the `@GrpcMarshaller`
+annotation to specify how the data will be marshaled. 
+
+Here's another example using JSON and a bidirectional streaming API:
 
 ```kotlin
 fun main() = runBlocking {
     // create the server
-    ComplexServer().asGrpcServer(PORT) {
-        println("Server started on port: $PORT\n")
-
-        // create a client with a new channel and call the server
-        ComplexServiceClient.forAddress("localhost", PORT, channelOptions = {
-            usePlaintext()
-        }).use { client ->
-            // unary call
-            println(client.ask(Question("what's this?")))
-
+    ComplexServer().asGrpcServer(8080) {
+        // create a client and call the server
+        ComplexServiceClient.forAddress("localhost", 8080, channelOptions = { usePlaintext() }).use { client ->
             // bidirectional streaming
             val answers = client.debate(produce {
                 repeat(10) { i -> send(Question("Question #${i + 1}")) }
@@ -43,26 +67,17 @@ fun main() = runBlocking {
             }
         }
     }
-    println("Server terminated.")
 }
-
-// define the data types
-data class Question(val query: String)
-data class Answer(val result: String)
 
 // generate a gRPC client
 @GrpcClient
 interface ComplexService {
-    suspend fun ask(question: Question): Answer
     suspend fun debate(questions: ReceiveChannel<Question>): ReceiveChannel<Answer>
 }
 
 // generate & implement a gRPC service
 @GrpcServer
 class ComplexServer : ComplexService {
-
-    override suspend fun ask(question: Question) = Answer("you said: '${question.query}'")
-
     override suspend fun debate(questions: ReceiveChannel<Question>) = CoroutineScope(coroutineContext).produce {
         for (question in questions) {
             send(Answer("${question.query}? Sorry, I don't know..."))
@@ -84,11 +99,33 @@ object MyMarshallerProvider {
 }
 ```
 
+### More Examples
+
 See the [complete example here](example-with-json), a [proto example here](example-with-proto), and a
 [Google Cloud API example here](example-with-google-api).
 
 For the adventurous, see the [gRPC reflection](https://github.com/grpc/grpc-java/blob/master/documentation/server-reflection-tutorial.md) 
 example [here](example-with-proto/src/main/kotlin/com/google/api/example/ExampleReflection.kt).
+
+You can run the examples by running the following in the root of the project:
+
+```bash
+ $ ./gradlew :runExample
+ $ ./gradlew :runExampleWithJson
+ $ ./gradlew :runExampleWithProto
+ $ ./gradlew :runExampleWithGoogle
+ $ ./gradlew :runExampleWithProtoReflection
+```
+
+*Note*: `:runExampleWithGoogle` requires a [GCP](https://cloud.google.com) project with the 
+[Langauge API](https://cloud.google.com/natural-language/) enabled. Set the `GOOGLE_APPLICATION_CREDENTIALS`
+environment variable before running, i.e.:
+
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=<path_to_service_account.json> ./gradlew :runExampleWithGoogle
+```
+
+## Related Projects
 
 It's sort of a simpler version of [kgen](https://github.com/googleapis/gapic-generator-kotlin).
 
